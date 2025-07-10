@@ -1,0 +1,7 @@
+# Sample Instagram URLs for batch download
+# Add your Instagram reel URLs here, one per line
+# Lines starting with # are ignored
+
+https://www.instagram.com/reel/XXXXXX/
+https://www.instagram.com/reel/YYYYYY/
+https://www.instagram.com/p/ZZZZZZ/
