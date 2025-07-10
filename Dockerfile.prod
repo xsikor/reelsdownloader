@@ -1,0 +1,55 @@
+# Multi-stage build for production
+# Stage 1: Build stage
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including dev)
+RUN npm ci
+
+# Copy source files
+COPY . .
+
+# Stage 2: Production stage
+FROM node:20-alpine
+
+# Install runtime dependencies only
+RUN apk add --no-cache \
+    ca-certificates \
+    tini
+
+# Create app directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install production dependencies only
+RUN npm ci --only=production && \
+    npm cache clean --force
+
+# Copy application files from builder
+COPY --from=builder /app/*.js ./
+COPY --from=builder /app/.env.example ./
+
+# Create directories
+RUN mkdir -p downloads temp
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+# Change ownership
+RUN chown -R nodejs:nodejs /app
+
+# Switch to non-root user
+USER nodejs
+
+# Use tini for proper signal handling
+ENTRYPOINT ["/sbin/tini", "--"]
+
+# Default command
+CMD ["node", "bot.js"]

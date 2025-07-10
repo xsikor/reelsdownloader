@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  # Telegram Bot Service
+  bot:
+    build: .
+    container_name: instagram-reels-bot
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - DOWNLOAD_DIR=/app/temp
+      - NODE_ENV=production
+    volumes:
+      # Persist temp files between restarts (optional)
+      - ./temp:/app/temp
+      # Persist downloads (optional)
+      - ./downloads:/app/downloads
+    command: node bot.js
+
+  # CLI Service (for one-off downloads)
+  cli:
+    build: .
+    container_name: instagram-reels-cli
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - ./downloads:/app/downloads
+    command: node index.js
+    profiles:
+      - cli
+
+# Named volumes (optional, for data persistence)
+volumes:
+  temp:
+  downloads:
