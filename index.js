@@ -4,16 +4,17 @@ const { program } = require('commander');
 const ora = require('ora').default;
 const fs = require('fs');
 const path = require('path');
-const { downloadInstagramReel, validateInstagramUrl } = require('./downloader');
+const { downloadVideo, validateInstagramUrl, validateTikTokUrl } = require('./downloader');
 
 // CLI-specific download wrapper with spinner
 async function downloadWithSpinner(url, outputDir) {
   console.log(`\nProcessing: ${url}`);
   
-  const spinner = ora('Fetching reel data...').start();
+  const platform = validateInstagramUrl(url) ? 'Instagram' : 'TikTok';
+  const spinner = ora(`Fetching ${platform} video data...`).start();
   
   try {
-    const result = await downloadInstagramReel(url, outputDir, {
+    const result = await downloadVideo(url, outputDir, {
       onProgress: (percent) => {
         spinner.text = `Downloading video... ${percent}%`;
       }
@@ -22,7 +23,7 @@ async function downloadWithSpinner(url, outputDir) {
     spinner.succeed('Video downloaded successfully');
     
     // Display results
-    console.log('\nReel Information:');
+    console.log(`\n${platform} Video Information:`);
     if (result.thumbnailUrl) {
       console.log(`- Thumbnail: ${result.thumbnailUrl}`);
     }
@@ -30,7 +31,7 @@ async function downloadWithSpinner(url, outputDir) {
     
     return result.path;
   } catch (error) {
-    spinner.fail('Failed to download reel');
+    spinner.fail(`Failed to download ${platform} video`);
     throw error;
   }
 }
@@ -82,10 +83,10 @@ async function batchDownload(filePath, outputDir) {
 
 // CLI setup
 program
-  .name('instagram-reels-downloader')
-  .description('Download Instagram Reels videos')
-  .version('1.0.0')
-  .argument('[url]', 'Instagram reel URL to download')
+  .name('video-downloader')
+  .description('Download Instagram and TikTok videos')
+  .version('1.1.0')
+  .argument('[url]', 'Instagram or TikTok video URL to download')
   .option('-o, --output <dir>', 'output directory', './downloads')
   .option('-b, --batch <file>', 'batch download from file containing URLs')
   .action(async (url, options) => {
@@ -98,7 +99,7 @@ program
         await downloadWithSpinner(url, options.output);
       } else {
         // No URL provided
-        console.error('Error: Please provide an Instagram URL or use --batch option');
+        console.error('Error: Please provide an Instagram or TikTok URL or use --batch option');
         program.help();
       }
     } catch (error) {

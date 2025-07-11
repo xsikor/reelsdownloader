@@ -1,4 +1,4 @@
-const { igdl } = require('btch-downloader');
+const { igdl, ttdl } = require('btch-downloader');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -24,6 +24,33 @@ function sanitizeFilename(filename) {
 function extractPostId(url) {
   const match = url.match(/\/(reel|p)\/([a-zA-Z0-9_-]+)/);
   return match ? match[2] : null;
+}
+
+// Helper function to validate TikTok URL
+function validateTikTokUrl(url) {
+  try {
+    const parsedUrl = new URL(url);
+    return (parsedUrl.hostname === 'www.tiktok.com' || 
+            parsedUrl.hostname === 'tiktok.com' ||
+            parsedUrl.hostname === 'vm.tiktok.com') &&
+           (parsedUrl.pathname.includes('/video/') || 
+            parsedUrl.pathname.match(/\/@[\w.-]+\/video\/\d+/) ||
+            parsedUrl.hostname === 'vm.tiktok.com');
+  } catch {
+    return false;
+  }
+}
+
+// Helper function to extract TikTok video ID
+function extractTikTokId(url) {
+  // Handle vm.tiktok.com short URLs
+  if (url.includes('vm.tiktok.com')) {
+    const match = url.match(/vm\.tiktok\.com\/([a-zA-Z0-9]+)/);
+    return match ? match[1] : null;
+  }
+  // Handle regular tiktok.com URLs
+  const match = url.match(/video\/(\d+)/);
+  return match ? match[1] : null;
 }
 
 // Function to download video without spinner (for bot usage)
@@ -119,8 +146,98 @@ async function downloadInstagramReel(url, outputDir = './downloads', options = {
   }
 }
 
+// TikTok download function
+async function downloadTikTokVideo(url, outputDir = './downloads', options = {}) {
+  const { quiet = false, onProgress = null } = options;
+  
+  // Validate URL
+  if (!validateTikTokUrl(url)) {
+    throw new Error('Invalid TikTok URL. Please provide a valid TikTok video URL.');
+  }
+
+  try {
+    // Use btch-downloader to fetch TikTok data
+    const result = await ttdl(url);
+    
+    // Check for error response
+    if (result && result.status === false && result.message) {
+      throw new Error(result.message);
+    }
+    
+    // Extract video URL
+    let videoUrl = null;
+    let thumbnailUrl = null;
+    
+    if (result && result.video && Array.isArray(result.video) && result.video.length > 0) {
+      // TikTok response format with video array
+      videoUrl = result.video[0];
+      thumbnailUrl = result.thumbnail;
+    } else if (Array.isArray(result) && result.length > 0) {
+      // btch-downloader returns an array directly
+      const firstItem = result[0];
+      if (firstItem.url) {
+        videoUrl = firstItem.url;
+      }
+      if (firstItem.thumbnail) {
+        thumbnailUrl = firstItem.thumbnail;
+      }
+    } else if (result && result.data && result.data.length > 0) {
+      // Alternative response format
+      const videoItem = result.data.find(item => item.url && (item.url.includes('.mp4') || item.type === 'video'));
+      if (videoItem) {
+        videoUrl = videoItem.url;
+      } else if (result.data[0].url) {
+        videoUrl = result.data[0].url;
+      }
+    }
+    
+    if (!videoUrl) {
+      throw new Error('Could not find video URL in the response. The video might be private or the service is temporarily unavailable.');
+    }
+    
+    // Create filename based on video ID or timestamp
+    const videoId = extractTikTokId(url);
+    const filename = videoId 
+      ? `tiktok_video_${videoId}`
+      : `tiktok_video_${Date.now()}`;
+    
+    // Ensure output directory exists
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+    
+    // Download the video
+    const outputPath = path.join(outputDir, `${sanitizeFilename(filename)}.mp4`);
+    await downloadVideoQuiet(videoUrl, outputPath, onProgress);
+    
+    return {
+      path: outputPath,
+      filename: `${sanitizeFilename(filename)}.mp4`,
+      thumbnailUrl,
+      videoUrl
+    };
+  } catch (error) {
+    throw new Error(`Failed to process TikTok video: ${error.message}`);
+  }
+}
+
+// Generic download function that detects platform
+async function downloadVideo(url, outputDir = './downloads', options = {}) {
+  if (validateInstagramUrl(url)) {
+    return await downloadInstagramReel(url, outputDir, options);
+  } else if (validateTikTokUrl(url)) {
+    return await downloadTikTokVideo(url, outputDir, options);
+  } else {
+    throw new Error('Invalid URL. Please provide a valid Instagram or TikTok URL.');
+  }
+}
+
 module.exports = {
   downloadInstagramReel,
   validateInstagramUrl,
-  extractPostId
+  extractPostId,
+  downloadTikTokVideo,
+  validateTikTokUrl,
+  extractTikTokId,
+  downloadVideo
 };

@@ -1,15 +1,17 @@
-# Instagram Reels Downloader
+# Instagram & TikTok Video Downloader
 
-A Node.js command-line tool to download Instagram Reels videos.
+A Node.js command-line tool and Telegram bot to download videos from Instagram and TikTok.
 
 ## Features
 
-- Download single Instagram Reels or posts with videos
+- Download videos from Instagram (Reels and Posts)
+- Download videos from TikTok
 - Batch download from a text file containing multiple URLs
 - Progress indicator during download
-- Automatic filename generation with username and post ID
-- URL validation
+- Automatic filename generation with platform and ID
+- URL validation for both platforms
 - Error handling for invalid or private content
+- Telegram bot for downloading videos directly in chat
 
 ## Installation
 
@@ -21,10 +23,17 @@ npm install
 
 ## Usage
 
-### Download a single reel
+### Download a single video
 
+Instagram:
 ```bash
 node index.js https://www.instagram.com/reel/XXXXXX/
+```
+
+TikTok:
+```bash
+node index.js https://www.tiktok.com/@username/video/1234567890
+node index.js https://vm.tiktok.com/ABC123/
 ```
 
 ### Specify output directory
@@ -35,11 +44,12 @@ node index.js https://www.instagram.com/reel/XXXXXX/ --output ./my-videos
 
 ### Batch download from file
 
-Create a text file with one URL per line:
+Create a text file with one URL per line (supports mixed platforms):
 ```text
 https://www.instagram.com/reel/XXXXXX/
-https://www.instagram.com/reel/YYYYYY/
+https://www.tiktok.com/@user/video/1234567890
 https://www.instagram.com/p/ZZZZZZ/
+https://vm.tiktok.com/ABC123/
 ```
 
 Then run:
@@ -56,17 +66,22 @@ node index.js --batch urls.txt
 
 ## Examples
 
-1. Download a single reel to default directory:
+1. Download Instagram reel:
 ```bash
 node index.js https://www.instagram.com/reel/C9HytkYS4Hc/
 ```
 
-2. Download to a specific folder:
+2. Download TikTok video:
 ```bash
-node index.js https://www.instagram.com/reel/C9HytkYS4Hc/ -o ~/Desktop/reels
+node index.js https://www.tiktok.com/@user/video/1234567890
 ```
 
-3. Batch download with custom output directory:
+3. Download to a specific folder:
+```bash
+node index.js https://www.instagram.com/reel/C9HytkYS4Hc/ -o ~/Desktop/videos
+```
+
+4. Batch download with custom output directory:
 ```bash
 node index.js --batch my-urls.txt --output ./my-collection
 ```
@@ -74,13 +89,16 @@ node index.js --batch my-urls.txt --output ./my-collection
 ## Output
 
 Downloaded videos are saved with the following naming format:
-- `{username}_instagram_reel_{postId}.mp4`
-- If username is not available: `instagram_reel_{postId}.mp4`
-- If post ID cannot be extracted: `instagram_reel_{timestamp}.mp4`
+
+**Instagram:**
+- `instagram_reel_{postId}.mp4` or `instagram_reel_{timestamp}.mp4`
+
+**TikTok:**
+- `tiktok_video_{videoId}.mp4` or `tiktok_video_{timestamp}.mp4`
 
 ## Telegram Bot Usage
 
-This tool also includes a Telegram bot that can download Instagram Reels directly in your chat!
+This tool also includes a Telegram bot that can download Instagram and TikTok videos directly in your chat!
 
 ### Setting up the Bot
 
@@ -111,7 +129,7 @@ This tool also includes a Telegram bot that can download Instagram Reels directl
 
 1. Start a chat with your bot on Telegram
 2. Send `/start` to see the welcome message
-3. Send any Instagram Reel or Post URL
+3. Send any Instagram or TikTok video URL
 4. The bot will download and send you the video
 
 ### Bot Features
@@ -190,22 +208,24 @@ docker build -f Dockerfile.prod -t instagram-reels-bot:prod .
 
 ## Note on Implementation
 
-This tool uses the `btch-downloader` package which provides a reliable way to download Instagram content. The package handles Instagram's anti-scraping measures and provides video URLs through a proxy service.
+This tool uses the `btch-downloader` package which provides a reliable way to download content from both Instagram and TikTok. The package handles anti-scraping measures and provides video URLs through a proxy service.
 
 ## Limitations
 
-- Only works with public Instagram content
-- Instagram may rate-limit requests if too many downloads are attempted
-- Video quality depends on what Instagram provides
+- Only works with public content on both platforms
+- Platforms may rate-limit requests if too many downloads are attempted
+- Video quality depends on what the platforms provide
 - The tool depends on third-party services which may occasionally be unavailable
+- TikTok videos may include watermarks
 
 ## Troubleshooting
 
-1. **"Invalid Instagram URL" error**: Make sure you're using the full Instagram URL including https://
+1. **"Invalid URL" error**: Make sure you're using the full URL including https://
 2. **"Could not find video URL" error**: The post might not contain a video or might be private
 3. **"fetch failed" error**: The download service might be temporarily unavailable, try again later
 4. **Network errors**: Check your internet connection and try again
+5. **TikTok URLs not working**: Ensure you're using the correct format (full URL with video ID)
 
 ## Disclaimer
 
-This tool is for educational purposes only. Please respect Instagram's Terms of Service and content creators' rights when downloading content.
+This tool is for educational purposes only. Please respect the Terms of Service of Instagram and TikTok, as well as content creators' rights when downloading content.
