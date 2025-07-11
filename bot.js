@@ -4,7 +4,7 @@ require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 const path = require('path');
-const { downloadInstagramReel, validateInstagramUrl } = require('./downloader');
+const { downloadVideo, validateInstagramUrl, validateTikTokUrl } = require('./downloader');
 
 // Bot configuration
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -26,14 +26,19 @@ if (!fs.existsSync(TEMP_DIR)) {
 // Store active downloads to prevent duplicates
 const activeDownloads = new Map();
 
-console.log('🤖 Instagram Reels Bot started successfully!');
+console.log('🤖 Instagram & TikTok Video Bot started successfully!');
 console.log(`📁 Using temp directory: ${TEMP_DIR}`);
 console.log('ℹ️  Note: For group chat support, disable privacy mode via @BotFather');
 
-// Helper function to extract Instagram URLs from text
-function extractInstagramUrls(text) {
-  const urlRegex = /https?:\/\/(www\.)?instagram\.com\/(reel|p)\/[a-zA-Z0-9_-]+\/?[^\s]*/g;
-  return text.match(urlRegex) || [];
+// Helper function to extract video URLs from text
+function extractVideoUrls(text) {
+  const instagramRegex = /https?:\/\/(www\.)?instagram\.com\/(reel|p)\/[a-zA-Z0-9_-]+\/?[^\s]*/g;
+  const tiktokRegex = /https?:\/\/(www\.|vm\.)?tiktok\.com\/(@[a-zA-Z0-9._-]+\/video\/\d+|[a-zA-Z0-9]+)\/?[^\s]*/g;
+  
+  const instagramUrls = text.match(instagramRegex) || [];
+  const tiktokUrls = text.match(tiktokRegex) || [];
+  
+  return [...instagramUrls, ...tiktokUrls];
 }
 
 // Helper function to clean up old files
@@ -61,19 +66,24 @@ bot.onText(/\/start/, (msg) => {
   const isGroupChat = ['group', 'supergroup'].includes(msg.chat.type);
   
   const welcomeMessage = `
-🎬 *Welcome to Instagram Reels Downloader Bot!*
+🎬 *Welcome to Instagram & TikTok Video Downloader Bot!*
 
-Simply send me an Instagram Reel or Post URL and I'll download the video for you.
+Simply send me an Instagram or TikTok video URL and I'll download it for you.
 
 *How to use:*
-1. Copy an Instagram URL (reel or post with video)
+1. Copy a video URL from Instagram or TikTok
 2. Send it to me
 3. Wait for the download to complete
 4. I'll send you the video file
 
-*Example URLs:*
+*Supported URLs:*
+📸 *Instagram:*
 • \`https://www.instagram.com/reel/ABC123/\`
 • \`https://www.instagram.com/p/XYZ789/\`
+
+🎵 *TikTok:*
+• \`https://www.tiktok.com/@username/video/123456\`
+• \`https://vm.tiktok.com/ABC123/\`
 
 *Group Chat Support:*
 ${isGroupChat ? '✅ This bot is active in this group!' : '• Add me to groups to download videos there'}
@@ -96,18 +106,23 @@ bot.onText(/\/help/, (msg) => {
   const isGroupChat = ['group', 'supergroup'].includes(msg.chat.type);
   
   const helpMessage = `
-*Instagram Reels Downloader Bot Help*
+*Instagram & TikTok Video Downloader Bot Help*
 
 *Commands:*
 /start - Welcome message
 /help - Show this help message
 
 *Usage:*
-Just send me any Instagram URL and I'll download it for you!
+Just send me any Instagram or TikTok video URL and I'll download it for you!
 
 *Supported URLs:*
+📸 *Instagram:*
 • Instagram Reels
 • Instagram Posts with videos
+
+🎵 *TikTok:*
+• TikTok videos
+• TikTok short links (vm.tiktok.com)
 
 *Group Chat Features:*
 • Works in group chats and supergroups
@@ -138,11 +153,11 @@ bot.on('message', async (msg) => {
     return;
   }
   
-  // Extract Instagram URLs from the message
-  const urls = extractInstagramUrls(messageText);
+  // Extract video URLs from the message
+  const urls = extractVideoUrls(messageText);
   
   if (urls.length === 0) {
-    return; // No Instagram URLs found, ignore the message
+    return; // No video URLs found, ignore the message
   }
   
   // Log activity with chat type
@@ -160,8 +175,8 @@ bot.on('message', async (msg) => {
       }
       
       // Validate URL
-      if (!validateInstagramUrl(url)) {
-        bot.sendMessage(chatId, `❌ Invalid Instagram URL: ${url}`, {
+      if (!validateInstagramUrl(url) && !validateTikTokUrl(url)) {
+        bot.sendMessage(chatId, `❌ Invalid URL: ${url}\nPlease provide a valid Instagram or TikTok URL.`, {
           reply_to_message_id: isGroupChat ? msg.message_id : undefined
         });
         continue;
@@ -170,14 +185,17 @@ bot.on('message', async (msg) => {
       // Mark as active download
       activeDownloads.set(`${chatId}-${url}`, true);
       
+      // Determine platform for better messaging
+      const platform = validateInstagramUrl(url) ? 'Instagram' : 'TikTok';
+      
       // Send initial status message
-      const statusMsg = await bot.sendMessage(chatId, `🔍 Fetching reel data from:\n${url}`, {
+      const statusMsg = await bot.sendMessage(chatId, `🔍 Fetching ${platform} video data from:\n${url}`, {
         reply_to_message_id: isGroupChat ? msg.message_id : undefined
       });
       
       try {
-        // Download the reel
-        const result = await downloadInstagramReel(url, TEMP_DIR, {
+        // Download the video
+        const result = await downloadVideo(url, TEMP_DIR, {
           quiet: true,
           onProgress: async (percent) => {
             // Update progress every 20%
