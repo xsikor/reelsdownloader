@@ -1,15 +1,16 @@
-# Instagram & TikTok Video Downloader
+# Instagram, TikTok & Facebook Video Downloader
 
-A Node.js command-line tool and Telegram bot to download videos from Instagram and TikTok.
+A Node.js command-line tool and Telegram bot to download videos from Instagram, TikTok and Facebook.
 
 ## Features
 
 - Download videos from Instagram (Reels and Posts)
 - Download videos from TikTok
+- Download videos from Facebook
 - Batch download from a text file containing multiple URLs
 - Progress indicator during download
 - Automatic filename generation with platform and ID
-- URL validation for both platforms
+- URL validation for all platforms
 - Error handling for invalid or private content
 - Telegram bot for downloading videos directly in chat
 
@@ -98,7 +99,7 @@ Downloaded videos are saved with the following naming format:
 
 ## Telegram Bot Usage
 
-This tool also includes a Telegram bot that can download Instagram and TikTok videos directly in your chat!
+This tool also includes a Telegram bot that can download Instagram, TikTok and Facebook videos directly in your chat!
 
 ### Setting up the Bot
 
@@ -129,7 +130,7 @@ This tool also includes a Telegram bot that can download Instagram and TikTok vi
 
 1. Start a chat with your bot on Telegram
 2. Send `/start` to see the welcome message
-3. Send any Instagram or TikTok video URL
+3. Send any Instagram, TikTok or Facebook video URL
 4. The bot will download and send you the video
 
 ### Bot Features
@@ -208,11 +209,11 @@ docker build -f Dockerfile.prod -t instagram-reels-bot:prod .
 
 ## Note on Implementation
 
-This tool uses the `btch-downloader` package which provides a reliable way to download content from both Instagram and TikTok. The package handles anti-scraping measures and provides video URLs through a proxy service.
+This tool uses the `btch-downloader` package which provides a reliable way to download content from Instagram, TikTok and Facebook. The package handles anti-scraping measures and provides video URLs through a proxy service.
 
 ## Limitations
 
-- Only works with public content on both platforms
+- Only works with public content on all platforms
 - Platforms may rate-limit requests if too many downloads are attempted
 - Video quality depends on what the platforms provide
 - The tool depends on third-party services which may occasionally be unavailable
@@ -228,4 +229,4 @@ This tool uses the `btch-downloader` package which provides a reliable way to do
 
 ## Disclaimer
 
-This tool is for educational purposes only. Please respect the Terms of Service of Instagram and TikTok, as well as content creators' rights when downloading content.
+This tool is for educational purposes only. Please respect the Terms of Service of Instagram, TikTok and Facebook, as well as content creators' rights when downloading content.

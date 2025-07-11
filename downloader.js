@@ -1,4 +1,4 @@
-const { igdl, ttdl } = require('btch-downloader');
+const { igdl, ttdl, fbdown } = require('btch-downloader');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -51,6 +51,27 @@ function extractTikTokId(url) {
   // Handle regular tiktok.com URLs
   const match = url.match(/video\/(\d+)/);
   return match ? match[1] : null;
+}
+
+// Helper function to validate Facebook URL
+function validateFacebookUrl(url) {
+  try {
+    const parsedUrl = new URL(url);
+    return (
+      parsedUrl.hostname === 'www.facebook.com' ||
+      parsedUrl.hostname === 'facebook.com' ||
+      parsedUrl.hostname === 'm.facebook.com' ||
+      parsedUrl.hostname === 'fb.watch'
+    );
+  } catch {
+    return false;
+  }
+}
+
+// Helper function to extract Facebook video ID
+function extractFacebookId(url) {
+  const match = url.match(/(?:videos\/(\d+)|fb\.watch\/([A-Za-z0-9_-]+))/);
+  return match ? (match[1] || match[2]) : null;
 }
 
 // Function to download video without spinner (for bot usage)
@@ -221,14 +242,59 @@ async function downloadTikTokVideo(url, outputDir = './downloads', options = {})
   }
 }
 
+// Facebook download function
+async function downloadFacebookVideo(url, outputDir = './downloads', options = {}) {
+  const { quiet = false, onProgress = null } = options;
+
+  if (!validateFacebookUrl(url)) {
+    throw new Error('Invalid Facebook URL. Please provide a valid Facebook video URL.');
+  }
+
+  try {
+    const result = await fbdown(url);
+
+    if (result && result.status === false && result.message) {
+      throw new Error(result.message);
+    }
+
+    const videoUrl = result.HD || result.Normal_video;
+    if (!videoUrl) {
+      throw new Error('Could not find video URL in the response');
+    }
+
+    const videoId = extractFacebookId(url);
+    const filename = videoId
+      ? `facebook_video_${videoId}`
+      : `facebook_video_${Date.now()}`;
+
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    const outputPath = path.join(outputDir, `${sanitizeFilename(filename)}.mp4`);
+    await downloadVideoQuiet(videoUrl, outputPath, onProgress);
+
+    return {
+      path: outputPath,
+      filename: `${sanitizeFilename(filename)}.mp4`,
+      thumbnailUrl: null,
+      videoUrl
+    };
+  } catch (error) {
+    throw new Error(`Failed to process Facebook video: ${error.message}`);
+  }
+}
+
 // Generic download function that detects platform
 async function downloadVideo(url, outputDir = './downloads', options = {}) {
   if (validateInstagramUrl(url)) {
     return await downloadInstagramReel(url, outputDir, options);
   } else if (validateTikTokUrl(url)) {
     return await downloadTikTokVideo(url, outputDir, options);
+  } else if (validateFacebookUrl(url)) {
+    return await downloadFacebookVideo(url, outputDir, options);
   } else {
-    throw new Error('Invalid URL. Please provide a valid Instagram or TikTok URL.');
+    throw new Error('Invalid URL. Please provide a valid Instagram, TikTok or Facebook URL.');
   }
 }
 
@@ -239,5 +305,8 @@ module.exports = {
   downloadTikTokVideo,
   validateTikTokUrl,
   extractTikTokId,
+  downloadFacebookVideo,
+  validateFacebookUrl,
+  extractFacebookId,
   downloadVideo
 };
