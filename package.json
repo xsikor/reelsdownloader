@@ -6,6 +6,8 @@
     "start": "node index.js",
     "bot": "node bot.js",
     "bot:dev": "nodemon bot.js",
+    "dashboard": "node metricsDashboard.js",
+    "bot:metrics": "ENABLE_METRICS=true node bot.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -25,6 +27,7 @@
     "btch-downloader": "^4.0.15",
     "commander": "^14.0.0",
     "dotenv": "^17.0.1",
+    "express": "^4.19.2",
     "insta-package": "^0.0.1",
     "node-telegram-bot-api": "^0.66.0",
     "ora": "^8.2.0"

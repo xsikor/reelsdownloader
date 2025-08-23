@@ -104,6 +104,8 @@ async function downloadVideoQuiet(videoUrl, outputPath, onProgress) {
 // Main download function without CLI-specific features
 async function downloadInstagramReel(url, outputDir = './downloads', options = {}) {
   const { quiet = false, onProgress = null } = options;
+  const startTime = Date.now();
+  const timings = { platform: 'instagram' };
   
   // Validate URL
   if (!validateInstagramUrl(url)) {
@@ -112,7 +114,9 @@ async function downloadInstagramReel(url, outputDir = './downloads', options = {
 
   try {
     // Use btch-downloader to fetch Instagram data
+    const fetchStartTime = Date.now();
     const result = await igdl(url);
+    timings.fetchMs = Date.now() - fetchStartTime;
     
     // Extract video URL
     let videoUrl = null;
@@ -154,13 +158,17 @@ async function downloadInstagramReel(url, outputDir = './downloads', options = {
     
     // Download the video
     const outputPath = path.join(outputDir, `${sanitizeFilename(filename)}.mp4`);
+    const downloadStartTime = Date.now();
     await downloadVideoQuiet(videoUrl, outputPath, onProgress);
+    timings.downloadMs = Date.now() - downloadStartTime;
+    timings.totalMs = Date.now() - startTime;
     
     return {
       path: outputPath,
       filename: `${sanitizeFilename(filename)}.mp4`,
       thumbnailUrl,
-      videoUrl
+      videoUrl,
+      timings
     };
   } catch (error) {
     throw new Error(`Failed to process reel: ${error.message}`);
@@ -170,6 +178,8 @@ async function downloadInstagramReel(url, outputDir = './downloads', options = {
 // TikTok download function
 async function downloadTikTokVideo(url, outputDir = './downloads', options = {}) {
   const { quiet = false, onProgress = null } = options;
+  const startTime = Date.now();
+  const timings = { platform: 'tiktok' };
   
   // Validate URL
   if (!validateTikTokUrl(url)) {
@@ -178,7 +188,9 @@ async function downloadTikTokVideo(url, outputDir = './downloads', options = {})
 
   try {
     // Use btch-downloader to fetch TikTok data
+    const fetchStartTime = Date.now();
     const result = await ttdl(url);
+    timings.fetchMs = Date.now() - fetchStartTime;
     
     // Check for error response
     if (result && result.status === false && result.message) {
@@ -229,13 +241,17 @@ async function downloadTikTokVideo(url, outputDir = './downloads', options = {})
     
     // Download the video
     const outputPath = path.join(outputDir, `${sanitizeFilename(filename)}.mp4`);
+    const downloadStartTime = Date.now();
     await downloadVideoQuiet(videoUrl, outputPath, onProgress);
+    timings.downloadMs = Date.now() - downloadStartTime;
+    timings.totalMs = Date.now() - startTime;
     
     return {
       path: outputPath,
       filename: `${sanitizeFilename(filename)}.mp4`,
       thumbnailUrl,
-      videoUrl
+      videoUrl,
+      timings
     };
   } catch (error) {
     throw new Error(`Failed to process TikTok video: ${error.message}`);
@@ -245,13 +261,17 @@ async function downloadTikTokVideo(url, outputDir = './downloads', options = {})
 // Facebook download function
 async function downloadFacebookVideo(url, outputDir = './downloads', options = {}) {
   const { quiet = false, onProgress = null } = options;
+  const startTime = Date.now();
+  const timings = { platform: 'facebook' };
 
   if (!validateFacebookUrl(url)) {
     throw new Error('Invalid Facebook URL. Please provide a valid Facebook video URL.');
   }
 
   try {
+    const fetchStartTime = Date.now();
     const result = await fbdown(url);
+    timings.fetchMs = Date.now() - fetchStartTime;
 
     if (result && result.status === false && result.message) {
       throw new Error(result.message);
@@ -272,13 +292,17 @@ async function downloadFacebookVideo(url, outputDir = './downloads', options = {
     }
 
     const outputPath = path.join(outputDir, `${sanitizeFilename(filename)}.mp4`);
+    const downloadStartTime = Date.now();
     await downloadVideoQuiet(videoUrl, outputPath, onProgress);
+    timings.downloadMs = Date.now() - downloadStartTime;
+    timings.totalMs = Date.now() - startTime;
 
     return {
       path: outputPath,
       filename: `${sanitizeFilename(filename)}.mp4`,
       thumbnailUrl: null,
-      videoUrl
+      videoUrl,
+      timings
     };
   } catch (error) {
     throw new Error(`Failed to process Facebook video: ${error.message}`);
@@ -287,14 +311,39 @@ async function downloadFacebookVideo(url, outputDir = './downloads', options = {
 
 // Generic download function that detects platform
 async function downloadVideo(url, outputDir = './downloads', options = {}) {
-  if (validateInstagramUrl(url)) {
-    return await downloadInstagramReel(url, outputDir, options);
-  } else if (validateTikTokUrl(url)) {
-    return await downloadTikTokVideo(url, outputDir, options);
-  } else if (validateFacebookUrl(url)) {
-    return await downloadFacebookVideo(url, outputDir, options);
-  } else {
-    throw new Error('Invalid URL. Please provide a valid Instagram, TikTok or Facebook URL.');
+  const startTime = Date.now();
+  let result;
+  
+  try {
+    if (validateInstagramUrl(url)) {
+      result = await downloadInstagramReel(url, outputDir, options);
+    } else if (validateTikTokUrl(url)) {
+      result = await downloadTikTokVideo(url, outputDir, options);
+    } else if (validateFacebookUrl(url)) {
+      result = await downloadFacebookVideo(url, outputDir, options);
+    } else {
+      throw new Error('Invalid URL. Please provide a valid Instagram, TikTok or Facebook URL.');
+    }
+    
+    // Add timing information to result
+    const totalTime = Date.now() - startTime;
+    result.timings = {
+      ...result.timings,
+      totalMs: totalTime,
+      startTime,
+      endTime: Date.now()
+    };
+    
+    return result;
+  } catch (error) {
+    const totalTime = Date.now() - startTime;
+    error.timings = {
+      totalMs: totalTime,
+      startTime,
+      endTime: Date.now(),
+      failed: true
+    };
+    throw error;
   }
 }
 

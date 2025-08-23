@@ -23,28 +23,15 @@ RUN npm ci --only=production
 # Copy application files
 COPY . .
 
-# Create directories for downloads and temp files
-RUN mkdir -p downloads temp
-
-# Create non-root user to run the app
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
-
-# Change ownership of the app directory
-RUN chown -R nodejs:nodejs /app
-
-# Switch to non-root user
-USER nodejs
-
-# Copy health check script
-COPY healthcheck.js .
+# Create directories for downloads, temp files, and metrics data
+RUN mkdir -p downloads temp metrics-data
 
 # Add health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node healthcheck.js || exit 1
 
-# Expose port (optional, for potential future web interface)
-EXPOSE 3000
+# Expose ports for bot and metrics dashboard
+EXPOSE 3000 3001
 
 # Default command runs the bot
 CMD ["node", "bot.js"]

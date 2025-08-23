@@ -8,13 +8,27 @@ services:
     restart: unless-stopped
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ADMIN_USER_IDS=${ADMIN_USER_IDS:-}
       - DOWNLOAD_DIR=/app/temp
       - NODE_ENV=production
+      - ENABLE_METRICS=true
+      - ENABLE_RATE_LIMITING=${ENABLE_RATE_LIMITING:-true}
+      - RATE_LIMIT_PRIVATE_PER_MINUTE=${RATE_LIMIT_PRIVATE_PER_MINUTE:-10}
+      - RATE_LIMIT_PRIVATE_PER_HOUR=${RATE_LIMIT_PRIVATE_PER_HOUR:-100}
+      - RATE_LIMIT_GROUP_PER_MINUTE=${RATE_LIMIT_GROUP_PER_MINUTE:-20}
+      - RATE_LIMIT_GROUP_PER_HOUR=${RATE_LIMIT_GROUP_PER_HOUR:-200}
+      - RATE_LIMIT_GLOBAL_PER_MINUTE=${RATE_LIMIT_GLOBAL_PER_MINUTE:-100}
+      - RATE_LIMIT_GLOBAL_PER_HOUR=${RATE_LIMIT_GLOBAL_PER_HOUR:-2000}
     volumes:
       # Persist temp files between restarts (optional)
       - ./temp:/app/temp
       # Persist downloads (optional)
       - ./downloads:/app/downloads
+      # Persist metrics data
+      - ./metrics-data:/app/metrics-data
+    ports:
+      # Expose metrics dashboard (optional)
+      - "3001:3001"
     command: node bot.js
 
   # CLI Service (for one-off downloads)
@@ -29,7 +43,26 @@ services:
     profiles:
       - cli
 
+  # Metrics Dashboard Service (optional, standalone)
+  dashboard:
+    build: .
+    container_name: instagram-reels-dashboard
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    volumes:
+      # Mount metrics data (read-only for dashboard)
+      - ./metrics-data:/app/metrics-data:ro
+    ports:
+      - "3001:3001"
+    command: node metricsDashboard.js
+    profiles:
+      - dashboard
+    depends_on:
+      - bot
+
 # Named volumes (optional, for data persistence)
 volumes:
   temp:
   downloads:
+  metrics:

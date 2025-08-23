@@ -5,6 +5,8 @@ const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 const path = require('path');
 const { downloadVideo, validateInstagramUrl, validateTikTokUrl, validateFacebookUrl } = require('./downloader');
+const { getMetrics } = require('./metrics');
+const { RateLimiter } = require('./rateLimiter');
 
 // Bot configuration
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -14,8 +16,74 @@ if (!token) {
   process.exit(1);
 }
 
+// Admin configuration - comma-separated list of user IDs
+const adminIds = process.env.ADMIN_USER_IDS 
+  ? process.env.ADMIN_USER_IDS.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id))
+  : [];
+
+if (adminIds.length > 0) {
+  console.log(`🔐 Admin mode enabled for ${adminIds.length} user(s): ${adminIds.join(', ')}`);
+} else {
+  console.log('ℹ️  No admin users configured. All users can access bot commands.');
+}
+
 // Create bot instance
 const bot = new TelegramBot(token, { polling: true });
+
+// Initialize metrics system if enabled
+const enableMetrics = process.env.ENABLE_METRICS === 'true' || process.env.NODE_ENV === 'production';
+const metrics = enableMetrics ? getMetrics() : null;
+const rateLimiter = enableMetrics ? new RateLimiter(metrics) : null;
+
+if (enableMetrics) {
+  console.log('📊 Metrics system enabled');
+}
+
+// Helper function to check if user is admin
+function isUserAdmin(userId) {
+  return adminIds.length === 0 || adminIds.includes(userId);
+}
+
+// Helper function to send admin-only error message
+function sendAdminOnlyMessage(chatId, isGroupChat, messageId) {
+  const adminOnlyMessage = adminIds.length > 0 
+    ? '🔐 This command is restricted to administrators only.'
+    : '❌ Admin functionality is disabled.';
+  
+  bot.sendMessage(chatId, adminOnlyMessage, {
+    reply_to_message_id: isGroupChat ? messageId : undefined
+  });
+}
+
+// Helper function to format latency in seconds with decimal precision
+function formatLatency(latencyMs) {
+  if (latencyMs < 1000) {
+    return `${Math.round(latencyMs)}ms`;
+  } else {
+    const seconds = (latencyMs / 1000).toFixed(2);
+    return `${seconds}s`;
+  }
+}
+
+// Helper function to get chat name based on chat type
+function getChatName(chat) {
+  if (chat.type === 'private') {
+    // For private chats: use first_name + last_name or username
+    let name = chat.first_name || '';
+    if (chat.last_name) {
+      name += ' ' + chat.last_name;
+    }
+    if (!name && chat.username) {
+      name = '@' + chat.username;
+    }
+    return name || 'Private Chat';
+  } else if (chat.type === 'group' || chat.type === 'supergroup') {
+    // For groups: use title
+    return chat.title || 'Group Chat';
+  } else {
+    return 'Unknown Chat';
+  }
+}
 
 // Temp directory for downloads
 const TEMP_DIR = process.env.DOWNLOAD_DIR || path.join(__dirname, 'temp');
@@ -41,6 +109,14 @@ function extractVideoUrls(text) {
   const facebookUrls = text.match(facebookRegex) || [];
 
   return [...instagramUrls, ...tiktokUrls, ...facebookUrls];
+}
+
+// Helper function to detect platform from URL
+function detectPlatform(url) {
+  if (validateInstagramUrl(url)) return 'instagram';
+  if (validateTikTokUrl(url)) return 'tiktok';
+  if (validateFacebookUrl(url)) return 'facebook';
+  return 'unknown';
 }
 
 // Helper function to clean up old files
@@ -97,6 +173,13 @@ ${isGroupChat ? '✅ This bot is active in this group!' : '• Add me to groups 
 • Make sure my privacy mode is disabled (via @BotFather)
 
 *Note:* Only public content can be downloaded.
+
+${adminIds.length > 0 ? `
+🔐 *Admin System Active*
+Your User ID: \`${msg.from.id}\`
+Admin Status: ${isUserAdmin(msg.from.id) ? '✅ Administrator' : '❌ Regular User'}
+${isUserAdmin(msg.from.id) ? 'You can use /metrics and /health commands.' : 'Contact admin to access advanced features.'}
+` : ''}
   `;
   
   bot.sendMessage(chatId, welcomeMessage, { 
@@ -117,6 +200,15 @@ bot.onText(/\/help/, (msg) => {
 *Commands:*
 /start - Welcome message
 /help - Show this help message
+/stats - Show your personal usage statistics
+
+${adminIds.length > 0 ? `*Admin Commands:*
+/metrics - Show global bot metrics
+/health - System health check
+
+*Your User ID:* \`${msg.from.id}\`
+${isUserAdmin(msg.from.id) ? '✅ *You have admin access*' : '❌ *You do not have admin access*'}
+` : ''}
 
 *Usage:*
 Just send me any Instagram, TikTok or Facebook video URL and I'll download it for you!
@@ -152,6 +244,236 @@ Just send me any Instagram, TikTok or Facebook video URL and I'll download it fo
   });
 });
 
+// Handle /stats command - Show user statistics
+bot.onText(/\/stats/, (msg) => {
+  const chatId = msg.chat.id;
+  const isGroupChat = ['group', 'supergroup'].includes(msg.chat.type);
+  
+  if (!enableMetrics) {
+    bot.sendMessage(chatId, '📊 Metrics are not enabled on this bot instance.', {
+      reply_to_message_id: isGroupChat ? msg.message_id : undefined
+    });
+    return;
+  }
+  
+  const chatMetrics = metrics.getChatMetrics(chatId);
+  const rateLimitStatus = rateLimiter.checkRateLimit(chatId, msg.chat.type);
+  
+  const statsMessage = `
+📊 *Your Bot Usage Statistics*
+
+*Total Requests:* ${chatMetrics.totalRequests}
+*Successful:* ${chatMetrics.successfulRequests}
+*Failed:* ${chatMetrics.failedRequests}
+*Success Rate:* ${chatMetrics.successRate}%
+
+*Platform Breakdown:*
+📸 Instagram: ${chatMetrics.platformBreakdown.instagram}
+🎵 TikTok: ${chatMetrics.platformBreakdown.tiktok}
+📘 Facebook: ${chatMetrics.platformBreakdown.facebook}
+
+*Rate Limits:*
+• Per minute: ${rateLimitStatus.current?.perMinute || 0}/${rateLimitStatus.limits?.perMinute || 'N/A'}
+• Per hour: ${rateLimitStatus.current?.perHour || 0}/${rateLimitStatus.limits?.perHour || 'N/A'}
+
+${chatMetrics.firstSeen ? `*First used:* ${new Date(chatMetrics.firstSeen).toLocaleDateString()}` : ''}
+${chatMetrics.lastSeen ? `*Last used:* ${new Date(chatMetrics.lastSeen).toLocaleDateString()}` : ''}
+  `;
+  
+  bot.sendMessage(chatId, statsMessage, { 
+    parse_mode: 'Markdown',
+    reply_to_message_id: isGroupChat ? msg.message_id : undefined
+  });
+});
+
+// Handle /metrics command - Show global metrics (admin only)
+bot.onText(/\/metrics/, (msg) => {
+  const chatId = msg.chat.id;
+  const isGroupChat = ['group', 'supergroup'].includes(msg.chat.type);
+  
+  // Check admin permissions
+  if (!isUserAdmin(msg.from.id)) {
+    sendAdminOnlyMessage(chatId, isGroupChat, msg.message_id);
+    return;
+  }
+  
+  if (!enableMetrics) {
+    bot.sendMessage(chatId, '📊 Metrics are not enabled on this bot instance.', {
+      reply_to_message_id: isGroupChat ? msg.message_id : undefined
+    });
+    return;
+  }
+  
+  const globalMetrics = metrics.getGlobalMetrics();
+  const healthStatus = metrics.getHealthStatus();
+  const platformStats = metrics.getPlatformStats();
+  
+  const uptimeFormatted = Math.floor(globalMetrics.uptime / 1000 / 60);
+  
+  const metricsMessage = `
+📊 *Global Bot Metrics*
+
+*System Health:* ${healthStatus.healthy ? '✅ Healthy' : '❌ Issues Detected'}
+*Uptime:* ${uptimeFormatted} minutes
+
+*Total Statistics:*
+• Requests: ${globalMetrics.counters.totalRequests}
+• Success Rate: ${globalMetrics.performance.successRate}%
+• Avg Latency: ${formatLatency(globalMetrics.performance.averageLatency)}
+• Downloads: ${globalMetrics.performance.totalDownloads}
+
+*Platform Distribution:*
+📸 Instagram: ${platformStats.instagram}%
+🎵 TikTok: ${platformStats.tiktok}%
+📘 Facebook: ${platformStats.facebook}%
+
+*Chat Types:*
+👤 Private: ${globalMetrics.counters.requestsByChatType.private || 0}
+👥 Groups: ${(globalMetrics.counters.requestsByChatType.group || 0) + (globalMetrics.counters.requestsByChatType.supergroup || 0)}
+
+*Active Rate Limiters:* ${globalMetrics.activeWindows}
+  `;
+  
+  bot.sendMessage(chatId, metricsMessage, { 
+    parse_mode: 'Markdown',
+    reply_to_message_id: isGroupChat ? msg.message_id : undefined
+  });
+});
+
+// Handle /health command - System health check (admin only)
+bot.onText(/\/health/, (msg) => {
+  const chatId = msg.chat.id;
+  const isGroupChat = ['group', 'supergroup'].includes(msg.chat.type);
+  
+  // Check admin permissions
+  if (!isUserAdmin(msg.from.id)) {
+    sendAdminOnlyMessage(chatId, isGroupChat, msg.message_id);
+    return;
+  }
+  
+  if (!enableMetrics) {
+    bot.sendMessage(chatId, '✅ Bot is running (metrics disabled)', {
+      reply_to_message_id: isGroupChat ? msg.message_id : undefined
+    });
+    return;
+  }
+  
+  const healthStatus = metrics.getHealthStatus();
+  const memUsage = process.memoryUsage();
+  
+  const healthMessage = `
+🏥 *System Health Check*
+
+*Overall Status:* ${healthStatus.healthy ? '✅ Healthy' : '❌ Unhealthy'}
+*Uptime:* ${Math.floor(healthStatus.uptime / 1000 / 60)} minutes
+*Total Requests:* ${healthStatus.totalRequests}
+*Recent Failure Rate:* ${healthStatus.recentFailureRate}%
+
+*Memory Usage:*
+• RSS: ${Math.round(memUsage.rss / 1024 / 1024)}MB
+• Heap Used: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB
+• External: ${Math.round(memUsage.external / 1024 / 1024)}MB
+
+*Timestamp:* ${new Date(healthStatus.timestamp).toLocaleString()}
+  `;
+  
+  bot.sendMessage(chatId, healthMessage, { 
+    parse_mode: 'Markdown',
+    reply_to_message_id: isGroupChat ? msg.message_id : undefined
+  });
+});
+
+// /top10 command - Show top 10 most active chats
+bot.onText(/\/top10/, (msg) => {
+  const chatId = msg.chat.id;
+  const isGroupChat = ['group', 'supergroup'].includes(msg.chat.type);
+  
+  // Check admin permissions
+  if (!isUserAdmin(msg.from.id)) {
+    sendAdminOnlyMessage(chatId, isGroupChat, msg.message_id);
+    return;
+  }
+  
+  if (!enableMetrics) {
+    bot.sendMessage(chatId, '❌ Metrics system is disabled', {
+      reply_to_message_id: isGroupChat ? msg.message_id : undefined
+    });
+    return;
+  }
+  
+  const topChats = metrics.getTopChats(10);
+  
+  if (topChats.length === 0) {
+    bot.sendMessage(chatId, '📊 No chat activity recorded yet.', {
+      reply_to_message_id: isGroupChat ? msg.message_id : undefined
+    });
+    return;
+  }
+  
+  let message = '🏆 *Top 10 Most Active Chats*\n\n';
+  
+  topChats.forEach((chat, index) => {
+    const rank = index + 1;
+    const rankEmoji = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}.`;
+    const chatTypeEmoji = chat.chatType === 'private' ? '👤' : '👥';
+    
+    // Format chat name (truncate if too long)
+    const displayName = chat.chatName.length > 25 
+      ? chat.chatName.substring(0, 22) + '...' 
+      : chat.chatName;
+    
+    message += `${rankEmoji} ${chatTypeEmoji} *${displayName}*\n`;
+    message += `   📊 ${chat.totalRequests} requests (${chat.successRate}% success)\n`;
+    message += `   🆔 \`${chat.chatId}\`\n\n`;
+  });
+  
+  bot.sendMessage(chatId, message, { 
+    parse_mode: 'Markdown',
+    reply_to_message_id: isGroupChat ? msg.message_id : undefined
+  });
+});
+
+// /migrate_chat_names command - Update missing chat names for existing data (admin only)
+bot.onText(/\/migrate_chat_names/, async (msg) => {
+  const chatId = msg.chat.id;
+  const isGroupChat = ['group', 'supergroup'].includes(msg.chat.type);
+  
+  // Check admin permissions
+  if (!isUserAdmin(msg.from.id)) {
+    sendAdminOnlyMessage(chatId, isGroupChat, msg.message_id);
+    return;
+  }
+  
+  if (!enableMetrics) {
+    bot.sendMessage(chatId, '❌ Metrics system is disabled', {
+      reply_to_message_id: isGroupChat ? msg.message_id : undefined
+    });
+    return;
+  }
+  
+  // Send initial message
+  const statusMessage = await bot.sendMessage(chatId, '🔄 Starting chat name migration...', {
+    reply_to_message_id: isGroupChat ? msg.message_id : undefined
+  });
+  
+  try {
+    // Run the migration
+    await metrics.updateMissingChatNames(bot);
+    
+    // Update the status message
+    bot.editMessageText('✅ Chat name migration completed successfully! Check console for details.', {
+      chat_id: chatId,
+      message_id: statusMessage.message_id
+    });
+  } catch (error) {
+    console.error('Migration error:', error);
+    bot.editMessageText('❌ Chat name migration failed. Check console for error details.', {
+      chat_id: chatId,
+      message_id: statusMessage.message_id
+    });
+  }
+});
+
 // Handle all messages
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
@@ -170,11 +492,43 @@ bot.on('message', async (msg) => {
     return; // No video URLs found, ignore the message
   }
   
+  // Check rate limits if metrics are enabled
+  if (enableMetrics && rateLimiter) {
+    const rateLimitCheck = rateLimiter.checkRateLimit(chatId, msg.chat.type);
+    
+    if (!rateLimitCheck.allowed) {
+      const warningEmoji = rateLimitCheck.reason === 'penalty' ? '🚫' : '⏳';
+      bot.sendMessage(chatId, `${warningEmoji} ${rateLimitCheck.message}`, {
+        reply_to_message_id: isGroupChat ? msg.message_id : undefined
+      });
+      
+      // Record failed request due to rate limiting
+      if (metrics) {
+        const platform = detectPlatform(urls[0]);
+        const chatName = getChatName(msg.chat);
+        metrics.recordRequest(chatId, msg.chat.type, platform, false, chatName);
+      }
+      return;
+    }
+    
+    // Show warning if approaching limits
+    if (rateLimitCheck.warning) {
+      bot.sendMessage(chatId, rateLimitCheck.warning.message, {
+        reply_to_message_id: isGroupChat ? msg.message_id : undefined
+      });
+    }
+  }
+  
   // Log activity with chat type
   console.log(`📨 Processing ${urls.length} URL(s) from ${msg.chat.type} chat ${chatId}`);
   
   // Process each URL
   for (const url of urls) {
+    const startTime = Date.now();
+    let platform = detectPlatform(url);
+    let downloadSuccess = false;
+    let fileSizeBytes = 0;
+    
     try {
       // Check if already downloading
       if (activeDownloads.has(`${chatId}-${url}`)) {
@@ -189,6 +543,13 @@ bot.on('message', async (msg) => {
         bot.sendMessage(chatId, `❌ Invalid URL: ${url}\nPlease provide a valid Instagram, TikTok or Facebook URL.`, {
           reply_to_message_id: isGroupChat ? msg.message_id : undefined
         });
+        
+        // Record failed request due to invalid URL
+        if (enableMetrics && metrics) {
+          const chatName = getChatName(msg.chat);
+          metrics.recordRequest(chatId, msg.chat.type, platform, false, chatName);
+          rateLimiter?.onRequestFailed(chatId, new Error('Invalid URL'));
+        }
         continue;
       }
       
@@ -196,14 +557,10 @@ bot.on('message', async (msg) => {
       activeDownloads.set(`${chatId}-${url}`, true);
       
       // Determine platform for better messaging
-      const platform = validateInstagramUrl(url)
-        ? 'Instagram'
-        : validateTikTokUrl(url)
-          ? 'TikTok'
-          : 'Facebook';
+      const platformName = platform.charAt(0).toUpperCase() + platform.slice(1);
       
       // Send initial status message
-      const statusMsg = await bot.sendMessage(chatId, `🔍 Fetching ${platform} video data from:\n${url}`, {
+      const statusMsg = await bot.sendMessage(chatId, `🔍 Fetching ${platformName} video data from:\n${url}`, {
         reply_to_message_id: isGroupChat ? msg.message_id : undefined
       });
       
@@ -248,7 +605,6 @@ bot.on('message', async (msg) => {
         
         // Send the video
         await bot.sendVideo(chatId, result.path, {
-          caption: `🎬 Downloaded from: ${url}`,
           supports_streaming: true,
           reply_to_message_id: isGroupChat ? msg.message_id : undefined
         });
@@ -257,7 +613,9 @@ bot.on('message', async (msg) => {
         await bot.deleteMessage(chatId, statusMsg.message_id);
         
         // Clean up the file
+        fileSizeBytes = fs.statSync(result.path).size;
         fs.unlinkSync(result.path);
+        downloadSuccess = true;
         console.log(`✅ Sent video to ${chatId} (${msg.chat.type}): ${result.filename}`);
         
       } catch (error) {
@@ -274,6 +632,24 @@ bot.on('message', async (msg) => {
       } finally {
         // Remove from active downloads
         activeDownloads.delete(`${chatId}-${url}`);
+        
+        // Record metrics if enabled
+        if (enableMetrics && metrics) {
+          const latencyMs = Date.now() - startTime;
+          
+          // Record request metrics
+          const chatName = getChatName(msg.chat);
+          metrics.recordRequest(chatId, msg.chat.type, platform, downloadSuccess, chatName);
+          
+          // Record performance metrics
+          if (downloadSuccess) {
+            metrics.recordDownloadMetrics(chatId, platform, latencyMs, fileSizeBytes);
+            rateLimiter?.onRequestSuccess(chatId);
+          } else {
+            metrics.recordDownloadMetrics(chatId, platform, latencyMs, 0, new Error('Download failed'));
+            rateLimiter?.onRequestFailed(chatId, new Error('Download failed'));
+          }
+        }
       }
       
     } catch (error) {
@@ -290,10 +666,16 @@ bot.on('polling_error', (error) => {
   console.error('Polling error:', error);
 });
 
-// Graceful shutdown
-process.on('SIGINT', () => {
-  console.log('\n👋 Bot is shutting down...');
+// Graceful shutdown handler
+const gracefulShutdown = async (signal) => {
+  console.log(`\n👋 Bot is shutting down (${signal})...`);
   bot.stopPolling();
+  
+  // Shutdown metrics system
+  if (enableMetrics && metrics) {
+    console.log('📊 Saving metrics data...');
+    await metrics.shutdown();
+  }
   
   // Clean up temp files
   try {
@@ -307,6 +689,9 @@ process.on('SIGINT', () => {
   }
   
   process.exit(0);
-});
+};
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 console.log('👂 Bot is listening for messages...');
