@@ -14,11 +14,21 @@ class MetricsStore {
     this.chatMetrics = new Map();
     
     // Data retention settings (in milliseconds)
+    // Set to 0 or very large values to preserve data forever
     this.retentionPeriods = {
-      requests: 7 * 24 * 60 * 60 * 1000,        // 7 days
-      performance: 24 * 60 * 60 * 1000,         // 24 hours
-      chatMetrics: 30 * 24 * 60 * 60 * 1000     // 30 days
+      requests: process.env.METRICS_RETENTION_REQUESTS ? 
+        parseInt(process.env.METRICS_RETENTION_REQUESTS) : 0,     // 0 = keep forever
+      performance: process.env.METRICS_RETENTION_PERFORMANCE ? 
+        parseInt(process.env.METRICS_RETENTION_PERFORMANCE) : 0,  // 0 = keep forever  
+      chatMetrics: process.env.METRICS_RETENTION_CHAT_METRICS ? 
+        parseInt(process.env.METRICS_RETENTION_CHAT_METRICS) : 0  // 0 = keep forever
     };
+    
+    // Log retention settings on startup
+    console.log('📊 Metrics retention settings:');
+    console.log(`   Requests: ${this.retentionPeriods.requests === 0 ? 'Forever' : `${Math.floor(this.retentionPeriods.requests / (24 * 60 * 60 * 1000))} days`}`);
+    console.log(`   Performance: ${this.retentionPeriods.performance === 0 ? 'Forever' : `${Math.floor(this.retentionPeriods.performance / (60 * 60 * 1000))} hours`}`);
+    console.log(`   Chat Metrics: ${this.retentionPeriods.chatMetrics === 0 ? 'Forever' : `${Math.floor(this.retentionPeriods.chatMetrics / (24 * 60 * 60 * 1000))} days`}`);
     
     this.ensureDataDirectory();
     this.loadData();
@@ -292,31 +302,39 @@ class MetricsStore {
     const now = Date.now();
     let cleaned = 0;
     
-    // Clean old requests
-    const requestsCutoff = now - this.retentionPeriods.requests;
-    const originalRequestsLength = this.requests.length;
-    this.requests = this.requests.filter(req => req.timestamp > requestsCutoff);
-    cleaned += originalRequestsLength - this.requests.length;
-    
-    // Clean old performance data
-    const performanceCutoff = now - this.retentionPeriods.performance;
-    const originalPerformanceLength = this.performanceData.length;
-    this.performanceData = this.performanceData.filter(perf => perf.timestamp > performanceCutoff);
-    cleaned += originalPerformanceLength - this.performanceData.length;
-    
-    // Clean old chat metrics (remove inactive chats)
-    const chatMetricsCutoff = now - this.retentionPeriods.chatMetrics;
-    let chatsCleaned = 0;
-    for (const [chatId, metrics] of this.chatMetrics.entries()) {
-      if (metrics.lastSeen < chatMetricsCutoff) {
-        this.chatMetrics.delete(chatId);
-        chatsCleaned++;
-      }
+    // Clean old requests (only if retention period is set)
+    if (this.retentionPeriods.requests > 0) {
+      const requestsCutoff = now - this.retentionPeriods.requests;
+      const originalRequestsLength = this.requests.length;
+      this.requests = this.requests.filter(req => req.timestamp > requestsCutoff);
+      cleaned += originalRequestsLength - this.requests.length;
     }
-    cleaned += chatsCleaned;
+    
+    // Clean old performance data (only if retention period is set)
+    if (this.retentionPeriods.performance > 0) {
+      const performanceCutoff = now - this.retentionPeriods.performance;
+      const originalPerformanceLength = this.performanceData.length;
+      this.performanceData = this.performanceData.filter(perf => perf.timestamp > performanceCutoff);
+      cleaned += originalPerformanceLength - this.performanceData.length;
+    }
+    
+    // Clean old chat metrics (only if retention period is set)
+    let chatsCleaned = 0;
+    if (this.retentionPeriods.chatMetrics > 0) {
+      const chatMetricsCutoff = now - this.retentionPeriods.chatMetrics;
+      for (const [chatId, metrics] of this.chatMetrics.entries()) {
+        if (metrics.lastSeen < chatMetricsCutoff) {
+          this.chatMetrics.delete(chatId);
+          chatsCleaned++;
+        }
+      }
+      cleaned += chatsCleaned;
+    }
     
     if (cleaned > 0) {
       console.log(`🧹 Cleaned ${cleaned} old records (${chatsCleaned} inactive chats)`);
+    } else if (this.retentionPeriods.requests === 0 && this.retentionPeriods.performance === 0 && this.retentionPeriods.chatMetrics === 0) {
+      console.log('📊 Data retention is set to forever - no records were cleaned');
     }
   }
 
