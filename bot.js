@@ -4,7 +4,7 @@ require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 const path = require('path');
-const { downloadVideo, validateInstagramUrl, validateTikTokUrl, validateFacebookUrl } = require('./downloader');
+const { downloadVideo, validateInstagramUrl, validateTikTokUrl, validateFacebookUrl, validateYouTubeUrl, validateTwitterUrl } = require('./downloader');
 const { getMetrics } = require('./metrics');
 const { RateLimiter } = require('./rateLimiter');
 
@@ -94,21 +94,25 @@ if (!fs.existsSync(TEMP_DIR)) {
 // Store active downloads to prevent duplicates
 const activeDownloads = new Map();
 
-console.log('🤖 Instagram, TikTok & Facebook Video Bot started successfully!');
+console.log('🤖 Instagram, TikTok, Facebook & YouTube Video Bot started successfully!');
 console.log(`📁 Using temp directory: ${TEMP_DIR}`);
 console.log('ℹ️  Note: For group chat support, disable privacy mode via @BotFather');
 
 // Helper function to extract video URLs from text
-function extractVideoUrls(text) {
+function extractVideoUrls(text, isGroupChat = false) {
   const instagramRegex = /https?:\/\/(www\.)?instagram\.com\/(reel|p)\/[a-zA-Z0-9_-]+\/?[^\s]*/g;
   const tiktokRegex = /https?:\/\/(www\.|vm\.)?tiktok\.com\/(@[a-zA-Z0-9._-]+\/video\/\d+|[a-zA-Z0-9]+)\/?[^\s]*/g;
   const facebookRegex = /https?:\/\/(www\.|m\.)?facebook\.com\/[^\s]*|https?:\/\/fb\.watch\/[^\s]*/g;
+  const youtubeRegex = /https?:\/\/(www\.|m\.)?youtube\.com\/(shorts\/[^\s?#&]+|watch\?[^\s]+)|https?:\/\/youtu\.be\/[^\s?#&]+/g;
+  const twitterRegex = /https?:\/\/(www\.)?(twitter\.com|x\.com)\/[a-zA-Z0-9_]+\/status\/\d+[^\s]*/g;
 
   const instagramUrls = text.match(instagramRegex) || [];
   const tiktokUrls = text.match(tiktokRegex) || [];
   const facebookUrls = text.match(facebookRegex) || [];
+  const youtubeUrls = isGroupChat ? [] : (text.match(youtubeRegex) || []); // Skip YouTube URLs in group chats
+  const twitterUrls = text.match(twitterRegex) || [];
 
-  return [...instagramUrls, ...tiktokUrls, ...facebookUrls];
+  return [...instagramUrls, ...tiktokUrls, ...facebookUrls, ...youtubeUrls, ...twitterUrls];
 }
 
 // Helper function to detect platform from URL
@@ -116,6 +120,8 @@ function detectPlatform(url) {
   if (validateInstagramUrl(url)) return 'instagram';
   if (validateTikTokUrl(url)) return 'tiktok';
   if (validateFacebookUrl(url)) return 'facebook';
+  if (validateYouTubeUrl(url)) return 'youtube';
+  if (validateTwitterUrl(url)) return 'twitter';
   return 'unknown';
 }
 
@@ -142,17 +148,18 @@ setInterval(cleanupOldFiles, 30 * 60 * 1000);
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
   const isGroupChat = ['group', 'supergroup'].includes(msg.chat.type);
-  
-  const welcomeMessage = `
-🎬 *Welcome to Instagram, TikTok & Facebook Video Downloader Bot!*
+  const isPrivate = msg.chat.type === 'private';
 
-Simply send me an Instagram, TikTok or Facebook video URL and I'll download it for you.
+  const welcomeMessage = `
+🎬 *Welcome to Social Media Downloader Bot!*
+
+Simply send me an Instagram, TikTok, Facebook, Twitter/X${isPrivate ? ' or YouTube' : ''} URL and I'll download it for you.
 
 *How to use:*
-1. Copy a video URL from Instagram, TikTok or Facebook
+1. Copy a URL from any supported platform
 2. Send it to me
 3. Wait for the download to complete
-4. I'll send you the video file
+4. I'll send you the media file
 
 *Supported URLs:*
 📸 *Instagram:*
@@ -167,10 +174,21 @@ Simply send me an Instagram, TikTok or Facebook video URL and I'll download it f
 • \`https://www.facebook.com/somepage/videos/123456/\`
 • \`https://fb.watch/ABC123/\`
 
+🐦 *Twitter/X:*
+• \`https://twitter.com/user/status/123456\`
+• \`https://x.com/user/status/123456\`
+_Note: Includes tweet text with media_${isPrivate ? `
+
+▶️ *YouTube:*
+• \`https://www.youtube.com/watch?v=ABC123\`
+• \`https://www.youtube.com/shorts/ABC123\`
+• \`https://youtu.be/ABC123\`` : ''}
+
 *Group Chat Support:*
 ${isGroupChat ? '✅ This bot is active in this group!' : '• Add me to groups to download videos there'}
 • In groups, I'll reply to your message with the video
 • Make sure my privacy mode is disabled (via @BotFather)
+${!isPrivate ? '• ⚠️ YouTube downloads are only available in private chats' : ''}
 
 *Note:* Only public content can be downloaded.
 
@@ -195,7 +213,7 @@ bot.onText(/\/help/, (msg) => {
   const isGroupChat = ['group', 'supergroup'].includes(msg.chat.type);
   
   const helpMessage = `
-*Instagram, TikTok & Facebook Video Downloader Bot Help*
+*Instagram, TikTok, Facebook & YouTube Downloader Bot Help*
 
 *Commands:*
 /start - Welcome message
@@ -211,7 +229,7 @@ ${isUserAdmin(msg.from.id) ? '✅ *You have admin access*' : '❌ *You do not ha
 ` : ''}
 
 *Usage:*
-Just send me any Instagram, TikTok or Facebook video URL and I'll download it for you!
+Just send me any Instagram, TikTok, Facebook or YouTube Shorts URL and I'll download it for you!
 
 *Supported URLs:*
 📸 *Instagram:*
@@ -225,6 +243,10 @@ Just send me any Instagram, TikTok or Facebook video URL and I'll download it fo
 📘 *Facebook:*
 • Facebook videos
 • fb.watch short links
+
+▶️ *YouTube Shorts:*
+• YouTube Shorts links
+• youtu.be short links
 
 *Group Chat Features:*
 • Works in group chats and supergroups
@@ -271,6 +293,7 @@ bot.onText(/\/stats/, (msg) => {
 📸 Instagram: ${chatMetrics.platformBreakdown.instagram}
 🎵 TikTok: ${chatMetrics.platformBreakdown.tiktok}
 📘 Facebook: ${chatMetrics.platformBreakdown.facebook}
+▶️ YouTube: ${chatMetrics.platformBreakdown.youtube || 0}
 
 *Rate Limits:*
 • Per minute: ${rateLimitStatus.current?.perMinute || 0}/${rateLimitStatus.limits?.perMinute || 'N/A'}
@@ -326,6 +349,7 @@ bot.onText(/\/metrics/, (msg) => {
 📸 Instagram: ${platformStats.instagram}%
 🎵 TikTok: ${platformStats.tiktok}%
 📘 Facebook: ${platformStats.facebook}%
+▶️ YouTube: ${platformStats.youtube}%
 
 *Chat Types:*
 👤 Private: ${globalMetrics.counters.requestsByChatType.private || 0}
@@ -485,8 +509,8 @@ bot.on('message', async (msg) => {
     return;
   }
   
-  // Extract video URLs from the message
-  const urls = extractVideoUrls(messageText);
+  // Extract video URLs from the message (skip YouTube in group chats)
+  const urls = extractVideoUrls(messageText, isGroupChat);
   
   if (urls.length === 0) {
     return; // No video URLs found, ignore the message
@@ -498,10 +522,17 @@ bot.on('message', async (msg) => {
     
     if (!rateLimitCheck.allowed) {
       const warningEmoji = rateLimitCheck.reason === 'penalty' ? '🚫' : '⏳';
-      bot.sendMessage(chatId, `${warningEmoji} ${rateLimitCheck.message}`, {
+      const errorMsg = await bot.sendMessage(chatId, `${warningEmoji} ${rateLimitCheck.message}`, {
         reply_to_message_id: isGroupChat ? msg.message_id : undefined
       });
-      
+
+      // Auto-delete error message in group chats after 5 seconds
+      if (isGroupChat) {
+        setTimeout(() => {
+          bot.deleteMessage(chatId, errorMsg.message_id).catch(() => {});
+        }, 5000);
+      }
+
       // Record failed request due to rate limiting
       if (metrics) {
         const platform = detectPlatform(urls[0]);
@@ -532,18 +563,38 @@ bot.on('message', async (msg) => {
     try {
       // Check if already downloading
       if (activeDownloads.has(`${chatId}-${url}`)) {
-        bot.sendMessage(chatId, '⏳ This URL is already being processed. Please wait...', {
+        const errorMsg = await bot.sendMessage(chatId, '⏳ This URL is already being processed. Please wait...', {
           reply_to_message_id: isGroupChat ? msg.message_id : undefined
         });
+
+        // Auto-delete message in group chats after 5 seconds
+        if (isGroupChat) {
+          setTimeout(() => {
+            bot.deleteMessage(chatId, errorMsg.message_id).catch(() => {});
+          }, 5000);
+        }
         continue;
       }
       
+      // Silently ignore YouTube URLs in group chats
+      if (validateYouTubeUrl(url) && isGroupChat) {
+        console.log(`Ignoring YouTube URL in group chat ${chatId}: ${url}`);
+        continue;
+      }
+
       // Validate URL
-      if (!validateInstagramUrl(url) && !validateTikTokUrl(url) && !validateFacebookUrl(url)) {
-        bot.sendMessage(chatId, `❌ Invalid URL: ${url}\nPlease provide a valid Instagram, TikTok or Facebook URL.`, {
+      if (!validateInstagramUrl(url) && !validateTikTokUrl(url) && !validateFacebookUrl(url) && !validateYouTubeUrl(url) && !validateTwitterUrl(url)) {
+        const errorMsg = await bot.sendMessage(chatId, `❌ Invalid URL: ${url}\nPlease provide a valid Instagram, TikTok, Facebook, Twitter/X${!isGroupChat ? ' or YouTube' : ''} URL.`, {
           reply_to_message_id: isGroupChat ? msg.message_id : undefined
         });
-        
+
+        // Auto-delete error message in group chats after 5 seconds
+        if (isGroupChat) {
+          setTimeout(() => {
+            bot.deleteMessage(chatId, errorMsg.message_id).catch(() => {});
+          }, 5000);
+        }
+
         // Record failed request due to invalid URL
         if (enableMetrics && metrics) {
           const chatName = getChatName(msg.chat);
@@ -557,7 +608,14 @@ bot.on('message', async (msg) => {
       activeDownloads.set(`${chatId}-${url}`, true);
       
       // Determine platform for better messaging
-      const platformName = platform.charAt(0).toUpperCase() + platform.slice(1);
+      const platformLabels = {
+        instagram: 'Instagram',
+        tiktok: 'TikTok',
+        facebook: 'Facebook',
+        youtube: 'YouTube',
+        twitter: 'Twitter/X'
+      };
+      const platformName = platformLabels[platform] || 'Video';
       
       // Send initial status message
       const statusMsg = await bot.sendMessage(chatId, `🔍 Fetching ${platformName} video data from:\n${url}`, {
@@ -585,8 +643,73 @@ bot.on('message', async (msg) => {
             }
           }
         });
-        
-        // Update status
+
+        // Handle Twitter special case - might not have media
+        if (platform === 'twitter' && !result.hasMedia) {
+          // Delete status message
+          await bot.deleteMessage(chatId, statusMsg.message_id);
+
+          // Send tweet text only
+          const tweetMessage = `🐦 *Twitter/X Post (Text Only)*\n\n${result.tweetText || 'No text available'}\n\n_No media found in this tweet_`;
+          await bot.sendMessage(chatId, tweetMessage, {
+            parse_mode: 'Markdown',
+            reply_to_message_id: isGroupChat ? msg.message_id : undefined
+          });
+
+          downloadSuccess = true;
+          console.log(`✅ Sent Twitter text to ${chatId} (${msg.chat.type})`);
+          continue;
+        }
+
+        // Handle Twitter images
+        if (platform === 'twitter' && result.mediaType === 'image') {
+          // Update status
+          await bot.editMessageText(
+            `✅ Download complete! Sending ${result.paths.length > 1 ? 'images' : 'image'}...\n${url}`,
+            {
+              chat_id: chatId,
+              message_id: statusMsg.message_id
+            }
+          );
+
+          const tweetCaption = result.tweetText ? `🐦 *Twitter/X Post*\n\n${result.tweetText}` : '🐦 *Twitter/X Post*';
+
+          // Send single image or media group
+          if (result.paths.length === 1) {
+            await bot.sendPhoto(chatId, result.paths[0], {
+              caption: tweetCaption,
+              parse_mode: 'Markdown',
+              reply_to_message_id: isGroupChat ? msg.message_id : undefined
+            });
+          } else {
+            // Send as media group for multiple images
+            const mediaGroup = result.paths.map((imagePath, index) => ({
+              type: 'photo',
+              media: fs.createReadStream(imagePath),
+              caption: index === 0 ? tweetCaption : undefined,
+              parse_mode: index === 0 ? 'Markdown' : undefined
+            }));
+
+            await bot.sendMediaGroup(chatId, mediaGroup, {
+              reply_to_message_id: isGroupChat ? msg.message_id : undefined
+            });
+          }
+
+          // Delete status message
+          await bot.deleteMessage(chatId, statusMsg.message_id);
+
+          // Clean up image files and calculate total size
+          for (const imagePath of result.paths) {
+            fileSizeBytes += fs.statSync(imagePath).size;
+            fs.unlinkSync(imagePath);
+          }
+
+          downloadSuccess = true;
+          console.log(`✅ Sent ${result.paths.length} Twitter image(s) to ${chatId} (${msg.chat.type})`);
+          continue;
+        }
+
+        // Update status for video
         await bot.editMessageText(
           `✅ Download complete! Sending video...\n${url}`,
           {
@@ -594,24 +717,33 @@ bot.on('message', async (msg) => {
             message_id: statusMsg.message_id
           }
         );
-        
+
         // Check file size (Telegram limit is 50MB)
         const stats = fs.statSync(result.path);
         const fileSizeMB = stats.size / (1024 * 1024);
-        
+
         if (fileSizeMB > 50) {
           throw new Error(`File too large (${fileSizeMB.toFixed(1)}MB). Telegram limit is 50MB.`);
         }
-        
-        // Send the video
-        await bot.sendVideo(chatId, result.path, {
-          supports_streaming: true,
-          reply_to_message_id: isGroupChat ? msg.message_id : undefined
-        });
-        
+
+        // Send the video with tweet text for Twitter
+        if (platform === 'twitter' && result.tweetText) {
+          await bot.sendVideo(chatId, result.path, {
+            supports_streaming: true,
+            caption: `🐦 *Twitter/X Post*\n\n${result.tweetText}`,
+            parse_mode: 'Markdown',
+            reply_to_message_id: isGroupChat ? msg.message_id : undefined
+          });
+        } else {
+          await bot.sendVideo(chatId, result.path, {
+            supports_streaming: true,
+            reply_to_message_id: isGroupChat ? msg.message_id : undefined
+          });
+        }
+
         // Delete status message
         await bot.deleteMessage(chatId, statusMsg.message_id);
-        
+
         // Clean up the file
         fileSizeBytes = fs.statSync(result.path).size;
         fs.unlinkSync(result.path);
@@ -620,7 +752,7 @@ bot.on('message', async (msg) => {
         
       } catch (error) {
         console.error(`Error processing ${url}:`, error);
-        
+
         // Update status with error
         await bot.editMessageText(
           `❌ Failed to download:\n${url}\n\nError: ${error.message}`,
@@ -629,6 +761,13 @@ bot.on('message', async (msg) => {
             message_id: statusMsg.message_id
           }
         );
+
+        // Auto-delete error message in group chats after 5 seconds
+        if (isGroupChat) {
+          setTimeout(() => {
+            bot.deleteMessage(chatId, statusMsg.message_id).catch(() => {});
+          }, 5000);
+        }
       } finally {
         // Remove from active downloads
         activeDownloads.delete(`${chatId}-${url}`);
@@ -654,9 +793,16 @@ bot.on('message', async (msg) => {
       
     } catch (error) {
       console.error('Unexpected error:', error);
-      bot.sendMessage(chatId, `❌ An unexpected error occurred: ${error.message}`, {
+      const errorMsg = await bot.sendMessage(chatId, `❌ An unexpected error occurred: ${error.message}`, {
         reply_to_message_id: isGroupChat ? msg.message_id : undefined
       });
+
+      // Auto-delete error message in group chats after 5 seconds
+      if (isGroupChat) {
+        setTimeout(() => {
+          bot.deleteMessage(chatId, errorMsg.message_id).catch(() => {});
+        }, 5000);
+      }
     }
   }
 });

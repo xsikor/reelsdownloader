@@ -1,12 +1,13 @@
-# Instagram, TikTok & Facebook Video Downloader
+# Instagram, TikTok, Facebook & YouTube Video Downloader
 
-A Node.js command-line tool and Telegram bot to download videos from Instagram, TikTok and Facebook.
+A Node.js command-line tool and Telegram bot to download videos from Instagram, TikTok, Facebook and YouTube Shorts.
 
 ## Features
 
 - Download videos from Instagram (Reels and Posts)
 - Download videos from TikTok
 - Download videos from Facebook
+- Download YouTube Shorts (and standard YouTube links)
 - Batch download from a text file containing multiple URLs
 - Progress indicator during download
 - Automatic filename generation with platform and ID
@@ -37,6 +38,12 @@ node index.js https://www.tiktok.com/@username/video/1234567890
 node index.js https://vm.tiktok.com/ABC123/
 ```
 
+YouTube Shorts:
+```bash
+node index.js https://www.youtube.com/shorts/ABC123
+node index.js https://youtu.be/ABC123
+```
+
 ### Specify output directory
 
 ```bash
@@ -51,6 +58,7 @@ https://www.instagram.com/reel/XXXXXX/
 https://www.tiktok.com/@user/video/1234567890
 https://www.instagram.com/p/ZZZZZZ/
 https://vm.tiktok.com/ABC123/
+https://www.youtube.com/shorts/ABC123
 ```
 
 Then run:
@@ -97,9 +105,12 @@ Downloaded videos are saved with the following naming format:
 **TikTok:**
 - `tiktok_video_{videoId}.mp4` or `tiktok_video_{timestamp}.mp4`
 
+**YouTube Shorts:**
+- `youtube_video_{videoId}.mp4` or `youtube_video_{timestamp}.mp4`
+
 ## Telegram Bot Usage
 
-This tool also includes a Telegram bot that can download Instagram, TikTok and Facebook videos directly in your chat!
+This tool also includes a Telegram bot that can download Instagram, TikTok, Facebook and YouTube Shorts videos directly in your chat!
 
 ### Setting up the Bot
 
@@ -130,7 +141,7 @@ This tool also includes a Telegram bot that can download Instagram, TikTok and F
 
 1. Start a chat with your bot on Telegram
 2. Send `/start` to see the welcome message
-3. Send any Instagram, TikTok or Facebook video URL
+3. Send any Instagram, TikTok, Facebook or YouTube Shorts URL
 4. The bot will download and send you the video
 
 ### Bot Features
@@ -229,4 +240,4 @@ This tool uses the `btch-downloader` package which provides a reliable way to do
 
 ## Disclaimer
 
-This tool is for educational purposes only. Please respect the Terms of Service of Instagram, TikTok and Facebook, as well as content creators' rights when downloading content.
+This tool is for educational purposes only. Please respect the Terms of Service of Instagram, TikTok, Facebook and YouTube, as well as content creators' rights when downloading content.

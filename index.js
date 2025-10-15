@@ -4,7 +4,7 @@ const { program } = require('commander');
 const ora = require('ora').default;
 const fs = require('fs');
 const path = require('path');
-const { downloadVideo, validateInstagramUrl, validateTikTokUrl, validateFacebookUrl } = require('./downloader');
+const { downloadVideo, validateInstagramUrl, validateTikTokUrl, validateFacebookUrl, validateYouTubeUrl } = require('./downloader');
 
 // CLI-specific download wrapper with spinner
 async function downloadWithSpinner(url, outputDir) {
@@ -14,7 +14,11 @@ async function downloadWithSpinner(url, outputDir) {
     ? 'Instagram'
     : validateTikTokUrl(url)
       ? 'TikTok'
-      : 'Facebook';
+      : validateFacebookUrl(url)
+        ? 'Facebook'
+        : validateYouTubeUrl(url)
+          ? 'YouTube'
+          : 'Unknown Platform';
   const spinner = ora(`Fetching ${platform} video data...`).start();
   
   try {
@@ -88,9 +92,9 @@ async function batchDownload(filePath, outputDir) {
 // CLI setup
 program
   .name('video-downloader')
-  .description('Download Instagram, TikTok and Facebook videos')
+  .description('Download Instagram, TikTok, Facebook and YouTube Shorts videos')
   .version('1.1.0')
-  .argument('[url]', 'Instagram, TikTok or Facebook video URL to download')
+  .argument('[url]', 'Instagram, TikTok, Facebook or YouTube Shorts video URL to download')
   .option('-o, --output <dir>', 'output directory', './downloads')
   .option('-b, --batch <file>', 'batch download from file containing URLs')
   .action(async (url, options) => {
@@ -103,7 +107,7 @@ program
         await downloadWithSpinner(url, options.output);
       } else {
         // No URL provided
-        console.error('Error: Please provide an Instagram, TikTok or Facebook URL or use --batch option');
+        console.error('Error: Please provide an Instagram, TikTok, Facebook or YouTube Shorts URL or use --batch option');
         program.help();
       }
     } catch (error) {

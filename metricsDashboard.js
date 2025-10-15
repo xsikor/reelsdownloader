@@ -151,7 +151,7 @@ class MetricsDashboard {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instagram/TikTok/Facebook Bot Metrics</title>
+    <title>Instagram/TikTok/Facebook/YouTube Bot Metrics</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -260,7 +260,7 @@ class MetricsDashboard {
 <body>
     <div class="header">
         <h1>📊 Bot Metrics Dashboard</h1>
-        <p>Real-time monitoring for Instagram/TikTok/Facebook Bot</p>
+        <p>Real-time monitoring for Instagram/TikTok/Facebook/YouTube Bot</p>
         <div class="live-indicator"></div> Live Updates
     </div>
 
@@ -312,6 +312,10 @@ class MetricsDashboard {
                 <div class="platform-stat">
                     <div>📘 Facebook</div>
                     <div id="facebook-percent">0%</div>
+                </div>
+                <div class="platform-stat">
+                    <div>▶️ YouTube</div>
+                    <div id="youtube-percent">0%</div>
                 </div>
             </div>
         </div>
@@ -372,6 +376,7 @@ class MetricsDashboard {
                 document.getElementById('instagram-percent').textContent = \`\${platformStats.instagram}%\`;
                 document.getElementById('tiktok-percent').textContent = \`\${platformStats.tiktok}%\`;
                 document.getElementById('facebook-percent').textContent = \`\${platformStats.facebook}%\`;
+                document.getElementById('youtube-percent').textContent = \`\${platformStats.youtube}%\`;
 
                 // Update top chats
                 const topChatsHtml = topChats.map(chat => \`

@@ -1,4 +1,4 @@
-const { igdl, ttdl, fbdown } = require('btch-downloader');
+const { igdl, ttdl, fbdown, youtube, twitter } = require('btch-downloader');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -74,6 +74,92 @@ function extractFacebookId(url) {
   return match ? (match[1] || match[2]) : null;
 }
 
+// Helper function to validate YouTube URL (supports all YouTube videos)
+function validateYouTubeUrl(url) {
+  try {
+    const parsedUrl = new URL(url);
+    const hostname = parsedUrl.hostname.replace(/^www\./, '');
+
+    if ([
+      'youtube.com',
+      'm.youtube.com',
+      'music.youtube.com',
+      'youtu.be'
+    ].includes(hostname)) {
+      if (hostname === 'youtu.be') {
+        return parsedUrl.pathname.length > 1;
+      }
+
+      // Support shorts
+      if (parsedUrl.pathname.startsWith('/shorts/')) {
+        return true;
+      }
+
+      // Support regular watch URLs
+      if (parsedUrl.pathname === '/watch' || parsedUrl.pathname.startsWith('/watch')) {
+        const videoId = parsedUrl.searchParams.get('v');
+        return videoId && videoId.length > 0;
+      }
+
+      // Support embed URLs
+      if (parsedUrl.pathname.startsWith('/embed/')) {
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+// Helper function to extract YouTube video ID
+function extractYouTubeId(url) {
+  try {
+    const parsedUrl = new URL(url);
+    const hostname = parsedUrl.hostname.replace(/^www\./, '');
+
+    if (hostname === 'youtu.be') {
+      return parsedUrl.pathname.replace(/^\//, '').split(/[?&#]/)[0] || null;
+    }
+
+    if (parsedUrl.pathname.startsWith('/shorts/')) {
+      return parsedUrl.pathname.split('/shorts/')[1]?.split(/[?&#]/)[0] || null;
+    }
+
+    const videoId = parsedUrl.searchParams.get('v');
+    return videoId || null;
+  } catch {
+    return null;
+  }
+}
+
+// Helper function to validate Twitter/X URL
+function validateTwitterUrl(url) {
+  try {
+    const parsedUrl = new URL(url);
+    const hostname = parsedUrl.hostname.replace(/^www\./, '');
+
+    // Support both twitter.com and x.com
+    if (['twitter.com', 'x.com'].includes(hostname)) {
+      // Check if it's a status URL
+      return parsedUrl.pathname.includes('/status/');
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+// Helper function to extract Twitter status ID
+function extractTwitterId(url) {
+  try {
+    const match = url.match(/\/status\/(\d+)/);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
 // Function to download video without spinner (for bot usage)
 async function downloadVideoQuiet(videoUrl, outputPath, onProgress) {
   try {
@@ -117,30 +203,54 @@ async function downloadInstagramReel(url, outputDir = './downloads', options = {
     const fetchStartTime = Date.now();
     const result = await igdl(url);
     timings.fetchMs = Date.now() - fetchStartTime;
-    
+
+    if (result && result.status === false) {
+      throw new Error(result.message || 'Instagram downloader service returned an error');
+    }
+
     // Extract video URL
     let videoUrl = null;
     let thumbnailUrl = null;
-    
+
+    const getCandidateFromItems = (items = []) => {
+      if (!Array.isArray(items) || items.length === 0) {
+        return null;
+      }
+
+      return items.find(item => item && item.url && (item.url.includes('.mp4') || item.type === 'video'))
+        || items.find(item => item && item.url)
+        || null;
+    };
+
     if (Array.isArray(result) && result.length > 0) {
-      // btch-downloader returns an array directly
-      const firstItem = result[0];
-      if (firstItem.url) {
-        videoUrl = firstItem.url;
+      // Older btch-downloader versions return an array directly
+      const candidate = getCandidateFromItems(result);
+      if (candidate?.url) {
+        videoUrl = candidate.url;
       }
-      if (firstItem.thumbnail) {
-        thumbnailUrl = firstItem.thumbnail;
+      if (candidate?.thumbnail) {
+        thumbnailUrl = candidate.thumbnail;
       }
-    } else if (result && result.data && result.data.length > 0) {
+    } else if (Array.isArray(result?.result) && result.result.length > 0) {
+      // Newer btch-downloader versions wrap results in a "result" array
+      const candidate = getCandidateFromItems(result.result);
+      if (candidate?.url) {
+        videoUrl = candidate.url;
+      }
+      if (candidate?.thumbnail) {
+        thumbnailUrl = candidate.thumbnail;
+      }
+    } else if (Array.isArray(result?.data) && result.data.length > 0) {
       // Alternative response format
-      const videoItem = result.data.find(item => item.url && (item.url.includes('.mp4') || item.type === 'video'));
-      if (videoItem) {
-        videoUrl = videoItem.url;
-      } else if (result.data[0].url) {
-        videoUrl = result.data[0].url;
+      const candidate = getCandidateFromItems(result.data);
+      if (candidate?.url) {
+        videoUrl = candidate.url;
+      }
+      if (candidate?.thumbnail) {
+        thumbnailUrl = candidate.thumbnail;
       }
     }
-    
+
     if (!videoUrl) {
       throw new Error('Could not find video URL in the response');
     }
@@ -309,6 +419,241 @@ async function downloadFacebookVideo(url, outputDir = './downloads', options = {
   }
 }
 
+// YouTube download function (supports all YouTube videos)
+async function downloadYouTubeShort(url, outputDir = './downloads', options = {}) {
+  const { quiet = false, onProgress = null } = options;
+  const startTime = Date.now();
+  const timings = { platform: 'youtube' };
+
+  if (!validateYouTubeUrl(url)) {
+    throw new Error('Invalid YouTube URL. Please provide a valid YouTube video link.');
+  }
+
+  try {
+    const fetchStartTime = Date.now();
+    const result = await youtube(url);
+    timings.fetchMs = Date.now() - fetchStartTime;
+
+    if (!result) {
+      throw new Error('Could not retrieve YouTube data');
+    }
+
+    // Handle error response
+    if (result.status === false) {
+      throw new Error(result.message || 'Could not retrieve YouTube data');
+    }
+
+    // The actual response structure is simple:
+    // { developer, title, thumbnail, author, mp3, mp4 }
+    let videoUrl = null;
+
+    // Direct string URL in mp4 field
+    if (result.mp4) {
+      if (typeof result.mp4 === 'string') {
+        videoUrl = result.mp4;
+      } else if (Array.isArray(result.mp4) && result.mp4.length > 0) {
+        // Handle potential array format (backwards compatibility)
+        const firstItem = result.mp4[0];
+        videoUrl = typeof firstItem === 'string' ? firstItem : firstItem?.url;
+      } else if (typeof result.mp4 === 'object') {
+        // Handle object format (backwards compatibility)
+        videoUrl = result.mp4.url || result.mp4.link || result.mp4.download_url;
+      }
+    }
+
+    if (!videoUrl) {
+      throw new Error('Could not find downloadable MP4 stream for this video');
+    }
+
+    const videoId = extractYouTubeId(url);
+    const filename = videoId
+      ? `youtube_video_${videoId}`
+      : `youtube_video_${Date.now()}`;
+
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    const outputPath = path.join(outputDir, `${sanitizeFilename(filename)}.mp4`);
+    const downloadStartTime = Date.now();
+    await downloadVideoQuiet(videoUrl, outputPath, onProgress);
+    timings.downloadMs = Date.now() - downloadStartTime;
+    timings.totalMs = Date.now() - startTime;
+
+    return {
+      path: outputPath,
+      filename: `${sanitizeFilename(filename)}.mp4`,
+      thumbnailUrl: result.thumbnail || null,
+      videoUrl,
+      title: result.title || null,
+      author: result.author || null,
+      timings
+    };
+  } catch (error) {
+    throw new Error(`Failed to process YouTube video: ${error.message}`);
+  }
+}
+
+// Helper function to download image without spinner
+async function downloadImageQuiet(imageUrl, outputPath, onProgress) {
+  try {
+    const response = await axios({
+      method: 'GET',
+      url: imageUrl,
+      responseType: 'stream',
+      onDownloadProgress: (progressEvent) => {
+        if (onProgress && progressEvent.total) {
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(percentCompleted);
+        }
+      }
+    });
+
+    const writer = fs.createWriteStream(outputPath);
+    response.data.pipe(writer);
+
+    return new Promise((resolve, reject) => {
+      writer.on('finish', resolve);
+      writer.on('error', reject);
+    });
+  } catch (error) {
+    throw new Error(`Failed to download image: ${error.message}`);
+  }
+}
+
+// Twitter/X download function
+async function downloadTwitterVideo(url, outputDir = './downloads', options = {}) {
+  const { quiet = false, onProgress = null } = options;
+  const startTime = Date.now();
+  const timings = { platform: 'twitter' };
+
+  if (!validateTwitterUrl(url)) {
+    throw new Error('Invalid Twitter/X URL. Please provide a valid Twitter/X status URL.');
+  }
+
+  try {
+    const fetchStartTime = Date.now();
+    const result = await twitter(url);
+    timings.fetchMs = Date.now() - fetchStartTime;
+
+    if (!result) {
+      throw new Error('Could not retrieve Twitter/X data');
+    }
+
+    // Handle error response
+    if (result.status === false) {
+      throw new Error(result.message || 'Could not retrieve Twitter/X data');
+    }
+
+    // Extract tweet text (title contains the tweet text)
+    const tweetText = result.title || '';
+
+    // Check for images first
+    let imageUrls = [];
+    if (result.image && Array.isArray(result.image) && result.image.length > 0) {
+      imageUrls = result.image;
+    } else if (result.image && typeof result.image === 'string') {
+      imageUrls = [result.image];
+    }
+
+    // If images found, download them
+    if (imageUrls.length > 0) {
+      const statusId = extractTwitterId(url);
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+
+      const imagePaths = [];
+      const downloadStartTime = Date.now();
+
+      for (let i = 0; i < imageUrls.length; i++) {
+        const imageUrl = imageUrls[i];
+        const filename = statusId
+          ? `twitter_image_${statusId}_${i + 1}`
+          : `twitter_image_${Date.now()}_${i + 1}`;
+
+        const outputPath = path.join(outputDir, `${sanitizeFilename(filename)}.jpg`);
+        await downloadImageQuiet(imageUrl, outputPath, onProgress);
+        imagePaths.push(outputPath);
+      }
+
+      timings.downloadMs = Date.now() - downloadStartTime;
+      timings.totalMs = Date.now() - startTime;
+
+      return {
+        hasMedia: true,
+        mediaType: 'image',
+        paths: imagePaths,
+        imageUrls,
+        tweetText: tweetText,
+        platform: 'twitter',
+        timings
+      };
+    }
+
+    // Check for video URLs
+    let hasMedia = false;
+    let videoUrl = null;
+
+    if (result.url && Array.isArray(result.url) && result.url.length > 0) {
+      hasMedia = true;
+      // Prefer HD quality if available
+      const hdVideo = result.url.find(item => item.hd);
+      const sdVideo = result.url.find(item => item.sd);
+
+      if (hdVideo && hdVideo.hd) {
+        videoUrl = hdVideo.hd;
+      } else if (sdVideo && sdVideo.sd) {
+        videoUrl = sdVideo.sd;
+      } else if (typeof result.url[0] === 'string') {
+        videoUrl = result.url[0];
+      }
+    } else if (result.url && typeof result.url === 'string') {
+      hasMedia = true;
+      videoUrl = result.url;
+    }
+
+    // If no media found, return with just the text
+    if (!hasMedia || !videoUrl) {
+      return {
+        hasMedia: false,
+        tweetText: tweetText,
+        platform: 'twitter',
+        timings
+      };
+    }
+
+    // Download the video
+    const statusId = extractTwitterId(url);
+    const filename = statusId
+      ? `twitter_video_${statusId}`
+      : `twitter_video_${Date.now()}`;
+
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    const outputPath = path.join(outputDir, `${sanitizeFilename(filename)}.mp4`);
+    const downloadStartTime = Date.now();
+    await downloadVideoQuiet(videoUrl, outputPath, onProgress);
+    timings.downloadMs = Date.now() - downloadStartTime;
+    timings.totalMs = Date.now() - startTime;
+
+    return {
+      hasMedia: true,
+      mediaType: 'video',
+      path: outputPath,
+      filename: `${sanitizeFilename(filename)}.mp4`,
+      videoUrl,
+      tweetText: tweetText,
+      platform: 'twitter',
+      timings
+    };
+  } catch (error) {
+    throw new Error(`Failed to process Twitter/X post: ${error.message}`);
+  }
+}
+
 // Generic download function that detects platform
 async function downloadVideo(url, outputDir = './downloads', options = {}) {
   const startTime = Date.now();
@@ -321,8 +666,12 @@ async function downloadVideo(url, outputDir = './downloads', options = {}) {
       result = await downloadTikTokVideo(url, outputDir, options);
     } else if (validateFacebookUrl(url)) {
       result = await downloadFacebookVideo(url, outputDir, options);
+    } else if (validateYouTubeUrl(url)) {
+      result = await downloadYouTubeShort(url, outputDir, options);
+    } else if (validateTwitterUrl(url)) {
+      result = await downloadTwitterVideo(url, outputDir, options);
     } else {
-      throw new Error('Invalid URL. Please provide a valid Instagram, TikTok or Facebook URL.');
+      throw new Error('Invalid URL. Please provide a valid Instagram, TikTok, Facebook, YouTube or Twitter/X URL.');
     }
     
     // Add timing information to result
@@ -357,5 +706,11 @@ module.exports = {
   downloadFacebookVideo,
   validateFacebookUrl,
   extractFacebookId,
+  downloadYouTubeShort,
+  validateYouTubeUrl,
+  extractYouTubeId,
+  downloadTwitterVideo,
+  validateTwitterUrl,
+  extractTwitterId,
   downloadVideo
 };

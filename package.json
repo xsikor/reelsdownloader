@@ -24,7 +24,7 @@
   "description": "Download videos from Instagram and TikTok from the command line or via Telegram bot",
   "dependencies": {
     "axios": "^1.10.0",
-    "btch-downloader": "^4.0.15",
+    "btch-downloader": "^6.0.4",
     "commander": "^14.0.0",
     "dotenv": "^17.0.1",
     "express": "^4.19.2",

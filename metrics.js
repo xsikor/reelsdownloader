@@ -15,7 +15,8 @@ class BotMetrics extends EventEmitter {
       requestsByPlatform: {
         instagram: 0,
         tiktok: 0,
-        facebook: 0
+        facebook: 0,
+        youtube: 0
       },
       requestsByChatType: {
         private: 0,
@@ -196,13 +197,14 @@ class BotMetrics extends EventEmitter {
   getPlatformStats() {
     const total = this.counters.totalRequests;
     if (total === 0) {
-      return { instagram: 0, tiktok: 0, facebook: 0 };
+      return { instagram: 0, tiktok: 0, facebook: 0, youtube: 0 };
     }
 
     return {
       instagram: ((this.counters.requestsByPlatform.instagram || 0) / total * 100).toFixed(1),
       tiktok: ((this.counters.requestsByPlatform.tiktok || 0) / total * 100).toFixed(1),
-      facebook: ((this.counters.requestsByPlatform.facebook || 0) / total * 100).toFixed(1)
+      facebook: ((this.counters.requestsByPlatform.facebook || 0) / total * 100).toFixed(1),
+      youtube: ((this.counters.requestsByPlatform.youtube || 0) / total * 100).toFixed(1)
     };
   }
 
@@ -265,7 +267,8 @@ class BotMetrics extends EventEmitter {
       requestsByPlatform: {
         instagram: 0,
         tiktok: 0,
-        facebook: 0
+        facebook: 0,
+        youtube: 0
       },
       requestsByChatType: {
         private: 0,

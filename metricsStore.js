@@ -86,7 +86,7 @@ class MetricsStore {
         totalRequests: 0,
         successfulRequests: 0,
         failedRequests: 0,
-        platformBreakdown: { instagram: 0, tiktok: 0, facebook: 0 },
+        platformBreakdown: { instagram: 0, tiktok: 0, facebook: 0, youtube: 0 },
         firstSeen: requestData.timestamp,
         lastSeen: requestData.timestamp
       });
@@ -139,7 +139,7 @@ class MetricsStore {
         totalRequests: 0,
         successfulRequests: 0,
         failedRequests: 0,
-        platformBreakdown: { instagram: 0, tiktok: 0, facebook: 0 },
+        platformBreakdown: { instagram: 0, tiktok: 0, facebook: 0, youtube: 0 },
         firstSeen: null,
         lastSeen: null,
         successRate: '0.00'
@@ -212,7 +212,8 @@ class MetricsStore {
     const platformStats = {
       instagram: { count: 0, totalLatency: 0, totalSize: 0, failures: 0 },
       tiktok: { count: 0, totalLatency: 0, totalSize: 0, failures: 0 },
-      facebook: { count: 0, totalLatency: 0, totalSize: 0, failures: 0 }
+      facebook: { count: 0, totalLatency: 0, totalSize: 0, failures: 0 },
+      youtube: { count: 0, totalLatency: 0, totalSize: 0, failures: 0 }
     };
     
     this.performanceData.forEach(perf => {
