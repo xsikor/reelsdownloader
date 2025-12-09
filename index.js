@@ -4,7 +4,7 @@ const { program } = require('commander');
 const ora = require('ora').default;
 const fs = require('fs');
 const path = require('path');
-const { downloadVideo, validateInstagramUrl, validateTikTokUrl, validateFacebookUrl, validateYouTubeUrl } = require('./downloader');
+const { downloadVideo, validateInstagramUrl, validateTikTokUrl, validateFacebookUrl, validateYouTubeUrl, validateTwitterUrl } = require('./downloader');
 
 // CLI-specific download wrapper with spinner
 async function downloadWithSpinner(url, outputDir) {
@@ -18,7 +18,9 @@ async function downloadWithSpinner(url, outputDir) {
         ? 'Facebook'
         : validateYouTubeUrl(url)
           ? 'YouTube'
-          : 'Unknown Platform';
+          : validateTwitterUrl(url)
+            ? 'Twitter/X'
+            : 'Unknown Platform';
   const spinner = ora(`Fetching ${platform} video data...`).start();
   
   try {
@@ -35,8 +37,23 @@ async function downloadWithSpinner(url, outputDir) {
     if (result.thumbnailUrl) {
       console.log(`- Thumbnail: ${result.thumbnailUrl}`);
     }
-    console.log(`- Video saved to: ${result.path}`);
-    
+    if (result.hasMedia) {
+      // Handle both single path and multiple paths (for images)
+      if (result.paths && Array.isArray(result.paths)) {
+        // Multiple images
+        console.log(`- Media saved to: ${result.paths.join(', ')}`);
+      } else if (result.path) {
+        // Single video/image
+        console.log(`- Media saved to: ${result.path}`);
+      }
+    } else {
+      console.log('- No downloadable media found.');
+    }
+    // Always display tweet text if available (full text)
+    if (result.tweetText) {
+      console.log(`- Text: ${result.tweetText}`);
+    }
+
     return result.path;
   } catch (error) {
     spinner.fail(`Failed to download ${platform} video`);

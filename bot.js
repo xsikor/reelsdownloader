@@ -85,6 +85,31 @@ function getChatName(chat) {
   }
 }
 
+// Helper function to trim text for Telegram caption limits
+// Telegram has a 1024 character limit for photo/video captions
+function trimTextForCaption(text, maxLength = 1024) {
+  if (!text || text.length <= maxLength) {
+    return text;
+  }
+
+  // Reserve space for ellipsis and "Read more" indicator
+  const trimmedLength = maxLength - 20; // Reserve 20 chars for "...\n\n[Trimmed]"
+  const trimmed = text.substring(0, trimmedLength);
+
+  // Try to cut at last complete sentence or paragraph
+  const lastPeriod = trimmed.lastIndexOf('.');
+  const lastNewline = trimmed.lastIndexOf('\n');
+  const cutPoint = Math.max(lastPeriod, lastNewline);
+
+  if (cutPoint > trimmedLength * 0.8) {
+    // If we found a good break point in the last 20%, use it
+    return trimmed.substring(0, cutPoint + 1) + '\n\n[Trimmed]';
+  }
+
+  // Otherwise just cut at the max length
+  return trimmed + '...\n\n[Trimmed]';
+}
+
 // Temp directory for downloads
 const TEMP_DIR = process.env.DOWNLOAD_DIR || path.join(__dirname, 'temp');
 if (!fs.existsSync(TEMP_DIR)) {
@@ -101,7 +126,7 @@ console.log('ℹ️  Note: For group chat support, disable privacy mode via @Bot
 // Helper function to extract video URLs from text
 function extractVideoUrls(text, isGroupChat = false) {
   const instagramRegex = /https?:\/\/(www\.)?instagram\.com\/(reel|p)\/[a-zA-Z0-9_-]+\/?[^\s]*/g;
-  const tiktokRegex = /https?:\/\/(www\.|vm\.)?tiktok\.com\/(@[a-zA-Z0-9._-]+\/video\/\d+|[a-zA-Z0-9]+)\/?[^\s]*/g;
+  const tiktokRegex = /https?:\/\/(?:www\.|vm\.|vt\.)?tiktok\.com\/(@[a-zA-Z0-9._-]+\/video\/\d+|[a-zA-Z0-9]+)\/?[^\s]*/g;
   const facebookRegex = /https?:\/\/(www\.|m\.)?facebook\.com\/[^\s]*|https?:\/\/fb\.watch\/[^\s]*/g;
   const youtubeRegex = /https?:\/\/(www\.|m\.)?youtube\.com\/(shorts\/[^\s?#&]+|watch\?[^\s]+)|https?:\/\/youtu\.be\/[^\s?#&]+/g;
   const twitterRegex = /https?:\/\/(www\.)?(twitter\.com|x\.com)\/[a-zA-Z0-9_]+\/status\/\d+[^\s]*/g;
@@ -169,6 +194,7 @@ Simply send me an Instagram, TikTok, Facebook, Twitter/X${isPrivate ? ' or YouTu
 🎵 *TikTok:*
 • \`https://www.tiktok.com/@username/video/123456\`
 • \`https://vm.tiktok.com/ABC123/\`
+• \`https://vt.tiktok.com/ABC123/\`
 
 📘 *Facebook:*
 • \`https://www.facebook.com/somepage/videos/123456/\`
@@ -649,8 +675,9 @@ bot.on('message', async (msg) => {
           // Delete status message
           await bot.deleteMessage(chatId, statusMsg.message_id);
 
-          // Send tweet text only
-          const tweetMessage = `🐦 *Twitter/X Post (Text Only)*\n\n${result.tweetText || 'No text available'}\n\n_No media found in this tweet_`;
+          // Send tweet text only (trim for Telegram message limit of 4096 chars)
+          const tweetText = trimTextForCaption(result.tweetText || 'No text available', 4000);
+          const tweetMessage = `🐦 *Twitter/X Post (Text Only)*\n\n${tweetText}\n\n_No media found in this tweet_`;
           await bot.sendMessage(chatId, tweetMessage, {
             parse_mode: 'Markdown',
             reply_to_message_id: isGroupChat ? msg.message_id : undefined
@@ -672,7 +699,9 @@ bot.on('message', async (msg) => {
             }
           );
 
-          const tweetCaption = result.tweetText ? `🐦 *Twitter/X Post*\n\n${result.tweetText}` : '🐦 *Twitter/X Post*';
+          // Trim tweet text for caption (1024 char limit)
+          const trimmedText = result.tweetText ? trimTextForCaption(result.tweetText, 1000) : '';
+          const tweetCaption = trimmedText ? `🐦 *Twitter/X Post*\n\n${trimmedText}` : '🐦 *Twitter/X Post*';
 
           // Send single image or media group
           if (result.paths.length === 1) {
@@ -728,9 +757,11 @@ bot.on('message', async (msg) => {
 
         // Send the video with tweet text for Twitter
         if (platform === 'twitter' && result.tweetText) {
+          // Trim tweet text for caption (1024 char limit)
+          const trimmedText = trimTextForCaption(result.tweetText, 1000);
           await bot.sendVideo(chatId, result.path, {
             supports_streaming: true,
-            caption: `🐦 *Twitter/X Post*\n\n${result.tweetText}`,
+            caption: `🐦 *Twitter/X Post*\n\n${trimmedText}`,
             parse_mode: 'Markdown',
             reply_to_message_id: isGroupChat ? msg.message_id : undefined
           });
